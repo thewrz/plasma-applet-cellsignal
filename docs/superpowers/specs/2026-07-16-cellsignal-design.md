@@ -91,7 +91,7 @@ accent-color changes are automatic.
 | showRsrp / showRsrq / showSnr / showRssi (popup + optional panel text) | Bool | true/true/true/false |
 | pollInterval (seconds, 1–30) | Int | 2 |
 | feedCommand | String | `cat /run/cellsignal.json` |
-| sparklineMetric (rsrp/rsrq/snr) | String | rsrp |
+| sparklineMetric (rsrp_dbm/rsrq_db/snr_db) | String | rsrp_dbm |
 | sparklineWindow (samples) | Int | 60 |
 
 ## Security & privacy

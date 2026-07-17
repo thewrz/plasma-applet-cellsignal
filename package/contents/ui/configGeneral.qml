@@ -20,7 +20,15 @@ Kirigami.FormLayout {
     property alias cfg_sparklineWindow: sparklineWindow.value
     property string cfg_sparklineMetric
     onCfg_sparklineMetricChanged: {
-        sparklineMetric.currentIndex = sparklineMetric.indexOfValue(cfg_sparklineMetric)
+        var i = sparklineMetric.indexOfValue(cfg_sparklineMetric)
+        if (i >= 0) {
+            sparklineMetric.currentIndex = i
+        } else {
+            // Unknown stored value (hand-edited config, downgrade): fall back
+            // to the first metric and sync the config to it.
+            sparklineMetric.currentIndex = 0
+            cfg_sparklineMetric = sparklineMetric.valueAt(0)
+        }
     }
 
     QQC2.TextField {

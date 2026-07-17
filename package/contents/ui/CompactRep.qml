@@ -26,7 +26,7 @@ MouseArea {
             visible: plasmoid.configuration.showBars
             Layout.preferredHeight: Math.min(compact.height * 0.7, Kirigami.Units.gridUnit * 1.2)
             Layout.alignment: Qt.AlignVCenter
-            rsrp: compact.live && feed.metrics.rsrp_dbm !== null ? feed.metrics.rsrp_dbm : NaN
+            rsrp: compact.live && typeof feed.metrics.rsrp_dbm === "number" ? feed.metrics.rsrp_dbm : NaN
         }
 
         Sparkline {
@@ -49,8 +49,8 @@ MouseArea {
                 font.bold: true
             }
             PlasmaComponents.Label {
-                visible: plasmoid.configuration.showFrequency && compact.live && feed.cell.freq_mhz !== null
-                text: compact.live && feed.cell.freq_mhz !== null ? feed.cell.freq_mhz + " MHz" : ""
+                visible: plasmoid.configuration.showFrequency && compact.live && feed.cell.freq_mhz != null
+                text: compact.live && feed.cell.freq_mhz != null ? feed.cell.freq_mhz + " MHz" : ""
                 font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.85
                 opacity: 0.7
             }

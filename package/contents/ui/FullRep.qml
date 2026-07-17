@@ -33,7 +33,7 @@ ColumnLayout {
             Layout.fillWidth: true
             Bars {
                 Layout.preferredHeight: Kirigami.Units.gridUnit * 1.5
-                rsrp: full.live && feed.metrics.rsrp_dbm !== null ? feed.metrics.rsrp_dbm : NaN
+                rsrp: full.live && typeof feed.metrics.rsrp_dbm === "number" ? feed.metrics.rsrp_dbm : NaN
             }
             Item { Layout.fillWidth: true }
             PlasmaComponents.Label {
@@ -41,7 +41,7 @@ ColumnLayout {
                     if (!full.live) return ""
                     var parts = []
                     if (feed.cell.band) parts.push(feed.cell.band)
-                    if (feed.cell.freq_mhz !== null) parts.push(feed.cell.freq_mhz + " MHz")
+                    if (feed.cell.freq_mhz != null) parts.push(feed.cell.freq_mhz + " MHz")
                     if (feed.tech) parts.push(feed.tech.toUpperCase())
                     return parts.join(" · ")
                 }

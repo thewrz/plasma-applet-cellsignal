@@ -12,6 +12,8 @@ PlasmoidItem {
     property bool stale: true
     // Sparkline ring buffer of the configured metric
     property var history: []
+    // Watchdog: wall-clock ms of the last feed reply (0 = none yet)
+    property double lastDataMs: 0
 
     readonly property int pollInterval: Math.max(1, plasmoid.configuration.pollInterval)
     readonly property bool connected: feed !== null && feed.state === "connected" && !stale
@@ -21,7 +23,7 @@ PlasmoidItem {
         if (!feed) return i18n("no feed")
         if (feed.state !== "connected") return feed.state
         var parts = []
-        if (feed.metrics.rsrp_dbm !== null) parts.push("RSRP " + feed.metrics.rsrp_dbm.toFixed(0) + " dBm")
+        if (typeof feed.metrics.rsrp_dbm === "number") parts.push("RSRP " + feed.metrics.rsrp_dbm.toFixed(0) + " dBm")
         if (feed.cell.band) parts.push(feed.cell.band)
         return parts.join(" · ") + (stale ? i18n(" (stale)") : "")
     }
@@ -49,12 +51,15 @@ PlasmoidItem {
             stale = true
             return
         }
-        if (!doc || doc.version !== 1) {
+        if (!doc || doc.version !== 1
+                || typeof doc.metrics !== "object" || doc.metrics === null
+                || typeof doc.cell !== "object" || doc.cell === null) {
             stale = true
             return
         }
         feed = doc
-        var ageSecs = (Date.now() / 1000) - doc.ts
+        var tsOk = typeof doc.ts === "number" && isFinite(doc.ts)
+        var ageSecs = tsOk ? (Date.now() / 1000) - doc.ts : Infinity
         stale = ageSecs > pollInterval * 3
         var v = metricValue(doc, plasmoid.configuration.sparklineMetric)
         if (doc.state === "connected" && v !== null && !stale) {
@@ -72,7 +77,33 @@ PlasmoidItem {
         connectedSources: []
         onNewData: (source, data) => {
             disconnectSource(source)
+            // A slow reply from a superseded command must not overwrite fresh data
+            if (source !== plasmoid.configuration.feedCommand) return
+            root.lastDataMs = Date.now()
             root.handleOutput(data.stdout, data["exit code"])
+        }
+
+        function dropAllSources() {
+            while (connectedSources.length > 0)
+                disconnectSource(connectedSources[0])
+        }
+    }
+
+    Connections {
+        target: plasmoid.configuration
+        function onSparklineMetricChanged() {
+            // Samples of the old metric are a different unit/scale
+            root.history = []
+        }
+        function onFeedCommandChanged() {
+            // A new feed source's samples are discontinuous with the old one's
+            root.history = []
+            executable.dropAllSources()
+        }
+        function onSparklineWindowChanged() {
+            var max = Math.max(2, plasmoid.configuration.sparklineWindow)
+            if (root.history.length > max)
+                root.history = root.history.slice(root.history.length - max)
         }
     }
 
@@ -81,6 +112,18 @@ PlasmoidItem {
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: executable.connectSource(plasmoid.configuration.feedCommand)
+        onTriggered: {
+            // Watchdog: a feed command that never exits emits no newData, so
+            // staleness must also be detected from the poll side.
+            if (Date.now() - root.lastDataMs > root.pollInterval * 3000)
+                root.stale = true
+            var cmd = plasmoid.configuration.feedCommand
+            if (executable.connectedSources.indexOf(cmd) !== -1) {
+                // Previous run is wedged; kill it so the next connect re-executes
+                executable.disconnectSource(cmd)
+                root.stale = true
+            }
+            executable.connectSource(cmd)
+        }
     }
 }
