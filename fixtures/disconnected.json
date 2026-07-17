@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "ts": 1789000000,
+  "state": "disconnected",
+  "tech": null,
+  "metrics": { "rsrp_dbm": null, "rsrq_db": null, "snr_db": null, "rssi_dbm": null },
+  "cell": { "band": null, "earfcn": null, "freq_mhz": null },
+  "quality_pct": null,
+  "source": "fixture"
+}
