@@ -1,7 +1,18 @@
 [Unit]
 Description=Publish XMM7360 cellular metrics to /run/cellsignal.json (Cell Signal feeder)
-ConditionPathExists=/dev/wwan0xmmrpc0
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/cellsignal-feeder-xmm7360 --write
+# Least privilege: root is required (the RPC node is 0600 root), so confine it.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=yes
+PrivateTmp=yes
+DevicePolicy=closed
+DeviceAllow=/dev/wwan0xmmrpc0 rw
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+UMask=0022

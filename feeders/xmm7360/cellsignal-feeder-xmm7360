@@ -15,8 +15,10 @@ import json
 import os
 import select
 import signal
+import struct
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -38,16 +40,27 @@ class Timeout(Exception):
     pass
 
 
-def _alarm(signum, frame):
-    raise Timeout()
+class ToolingError(Exception):
+    """The xmm7360 RPC userspace tooling is missing or incompatible."""
 
 
 def with_timeout(secs, fn, *args, **kw):
+    # `armed` closes the SIGALRM cancellation race: if the alarm fires after
+    # fn returns but before alarm(0) runs, the handler must not raise and
+    # discard a successful result.
+    armed = [False]
+
+    def _alarm(signum, frame):
+        if armed[0]:
+            raise Timeout()
+
     signal.signal(signal.SIGALRM, _alarm)
+    armed[0] = True
     signal.alarm(secs)
     try:
         return fn(*args, **kw)
     finally:
+        armed[0] = False
         signal.alarm(0)
 
 
@@ -94,10 +107,15 @@ def drain_port(fd, quiet_secs=0.4, max_secs=3.0):
 
 
 def catch_indication(debug=False):
-    import rpc                 # noqa: E402
-    import rpc_unsol_table     # noqa: E402
-    ind_code = next(code for code, name in rpc_unsol_table.xmm7360_unsol.items()
-                    if name == IND_NAME)
+    try:
+        import rpc                 # noqa: E402
+        import rpc_unsol_table     # noqa: E402
+    except ImportError as e:
+        raise ToolingError(f'rpc tooling not importable from {RPC_DIR}: {e}') from e
+    ind_code = next((code for code, name in rpc_unsol_table.xmm7360_unsol.items()
+                     if name == IND_NAME), None)
+    if ind_code is None:
+        raise ToolingError(f'{IND_NAME} missing from rpc_unsol_table')
     quiet = io.StringIO()
     r = with_timeout(6, rpc.XMMRPC)
     ints = None
@@ -144,7 +162,14 @@ def read_state(debug=False):
     try:
         try:
             ints = catch_indication(debug)
-        except (Timeout, OSError) as e:
+        except ToolingError as e:
+            print(f'cellsignal-feeder: {e}', file=sys.stderr)
+            return build_contract(None, 'error', now), False
+        except (Timeout, OSError, AssertionError, ValueError, IndexError,
+                KeyError, struct.error) as e:
+            # Malformed/truncated RPC messages raise Assertion/Value/Index/
+            # struct errors from the tooling's unpack path; treat them all
+            # as a failed session and keep the last published value.
             print(f'cellsignal-feeder: rpc session failed ({type(e).__name__}: {e}); '
                   f'keeping last value', file=sys.stderr)
             return None, True
@@ -174,11 +199,18 @@ def main():
         return
     text = json.dumps(doc)
     if mode == '--write':
-        tmp = f'{OUT}.new'
-        with open(tmp, 'w') as f:
-            f.write(text + '\n')
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, OUT)
+        # Unique temp name: a fixed one lets two concurrent instances
+        # truncate/rename each other's file mid-write.
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OUT), prefix='cellsignal.')
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(text + '\n')
+                os.fchmod(f.fileno(), 0o644)
+            os.replace(tmp, OUT)
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
     else:
         print(text)
 
