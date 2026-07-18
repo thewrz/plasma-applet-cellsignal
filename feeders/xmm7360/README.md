@@ -11,6 +11,7 @@ Install:
     sudo install -Dm644 cellsignal-xmm7360.service /etc/systemd/system/cellsignal-xmm7360.service
     sudo install -Dm644 cellsignal-xmm7360.timer   /etc/systemd/system/cellsignal-xmm7360.timer
     sudo systemctl daemon-reload && sudo systemctl enable --now cellsignal-xmm7360.timer
+    sudo systemctl start --wait cellsignal-xmm7360.service   # first publication, immediately
     cat /run/cellsignal.json
 
 Privacy: publishes signal metrics only — never IMEI/ICCID/IMSI or cell identifiers.
