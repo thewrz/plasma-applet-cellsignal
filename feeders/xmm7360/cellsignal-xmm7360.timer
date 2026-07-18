@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Cell Signal metrics feed
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=2
+AccuracySec=1
+
+[Install]
+WantedBy=timers.target

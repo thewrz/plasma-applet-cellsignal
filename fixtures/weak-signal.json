@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "ts": 1789000000,
+  "state": "connected",
+  "tech": "lte",
+  "metrics": { "rsrp_dbm": -117.0, "rsrq_db": -17.5, "snr_db": -2.0, "rssi_dbm": null },
+  "cell": { "band": "B2", "earfcn": 700, "freq_mhz": 1900 },
+  "quality_pct": 8,
+  "source": "fixture"
+}
