@@ -16,6 +16,9 @@ PlasmoidItem {
     property double lastDataMs: 0
 
     readonly property int pollInterval: Math.max(1, plasmoid.configuration.pollInterval)
+    // Single source of truth for the history bound: the config page exposes 10-600,
+    // but hand-edited appletsrc values bypass the SpinBox — clamp at use time too
+    readonly property int sparklineWindow: Math.min(600, Math.max(10, plasmoid.configuration.sparklineWindow))
     readonly property bool connected: feed !== null && feed.state === "connected" && !stale
 
     toolTipMainText: i18n("Cell Signal")
@@ -39,6 +42,11 @@ PlasmoidItem {
         return (v === undefined) ? null : v
     }
 
+    // Contract: metrics are number-or-null, never strings or other types
+    function validMetric(value) {
+        return value === null || (typeof value === "number" && isFinite(value))
+    }
+
     function handleOutput(stdout, exitCode) {
         if (exitCode !== 0 || !stdout || stdout.trim().length === 0) {
             stale = true
@@ -52,21 +60,25 @@ PlasmoidItem {
             return
         }
         if (!doc || doc.version !== 1
+                || typeof doc.ts !== "number" || !isFinite(doc.ts)
+                || ["connected", "disconnected", "no-modem", "error"].indexOf(doc.state) < 0
                 || typeof doc.metrics !== "object" || doc.metrics === null
-                || typeof doc.cell !== "object" || doc.cell === null) {
+                || typeof doc.cell !== "object" || doc.cell === null
+                || !validMetric(doc.metrics.rsrp_dbm)
+                || !validMetric(doc.metrics.rsrq_db)
+                || !validMetric(doc.metrics.snr_db)
+                || !validMetric(doc.metrics.rssi_dbm)) {
             stale = true
             return
         }
         feed = doc
-        var tsOk = typeof doc.ts === "number" && isFinite(doc.ts)
-        var ageSecs = tsOk ? (Date.now() / 1000) - doc.ts : Infinity
+        var ageSecs = (Date.now() / 1000) - doc.ts
         stale = ageSecs > pollInterval * 3
         var v = metricValue(doc, plasmoid.configuration.sparklineMetric)
-        if (doc.state === "connected" && v !== null && !stale) {
+        if (doc.state === "connected" && typeof v === "number" && isFinite(v) && !stale) {
             var h = history.slice()
             h.push(v)
-            var max = Math.max(2, plasmoid.configuration.sparklineWindow)
-            while (h.length > max) h.shift()
+            while (h.length > root.sparklineWindow) h.shift()
             history = h
         }
     }
@@ -104,9 +116,8 @@ PlasmoidItem {
             executable.dropAllSources()
         }
         function onSparklineWindowChanged() {
-            var max = Math.max(2, plasmoid.configuration.sparklineWindow)
-            if (root.history.length > max)
-                root.history = root.history.slice(root.history.length - max)
+            if (root.history.length > root.sparklineWindow)
+                root.history = root.history.slice(root.history.length - root.sparklineWindow)
         }
     }
 
