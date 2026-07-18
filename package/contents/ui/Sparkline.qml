@@ -6,7 +6,11 @@ import org.kde.kirigami as Kirigami
 Canvas {
     id: canvas
     property var samples: []
-    property real minSpan: 10   // dB(m) — minimum vertical span
+    // Minimum vertical span in dB(m). Small on purpose: indoor RSRP moves in
+    // sub-dB steps, and a wide floor flattens that real motion into sub-pixel
+    // territory. 3 dB keeps micro-variation visible without amplifying noise
+    // into drama.
+    property real minSpan: 3
 
     onSamplesChanged: requestPaint()
     onWidthChanged: requestPaint()
@@ -49,6 +53,17 @@ Canvas {
         ctx.lineTo(0, height)
         ctx.closePath()
         ctx.fillStyle = Qt.rgba(accent.r, accent.g, accent.b, 0.18)
+        ctx.fill()
+
+        // head dot marks the live edge — reads as alive even when the line is flat.
+        // Clamp the center a full radius inside the canvas on both axes, or the
+        // dot renders mostly clipped at common component sizes.
+        var r = Math.max(1.5, height / 9)
+        var headX = Math.min((samples.length - 1) * stepX, width - r)
+        var headY = Math.min(Math.max(yFor(samples[samples.length - 1]), r), height - r)
+        ctx.beginPath()
+        ctx.arc(headX, headY, r, 0, 2 * Math.PI)
+        ctx.fillStyle = accent
         ctx.fill()
     }
 }
