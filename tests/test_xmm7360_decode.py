@@ -22,14 +22,14 @@ XMCI_LIVE = ('\r\n+XMCI: 4,310,410,"0x1111","0x01234567","0x003D","0x000002BC",'
 def test_parse_xcesq_live_sample():
     m = parse_xcesq(XCESQ_LIVE)
     assert m['rsrp_dbm'] == -107.0        # idx 34 -> idx - 141
-    assert m['rsrq_db'] == -14.5          # idx 10 -> 0.5*idx - 19.5
+    assert m['rsrq_db'] == -15.0          # idx 10 -> 0.5*idx - 20 (bin lower bound)
     assert m['snr_db'] == 8.0             # sinr 16 in half-dB steps
 
 
 def test_parse_xcesq_negative_sinr():
     m = parse_xcesq(XCESQ_NEG_SINR)
     assert m['rsrp_dbm'] == -120.0
-    assert m['rsrq_db'] == -16.0
+    assert m['rsrq_db'] == -16.5
     assert m['snr_db'] == -4.5
 
 

@@ -1,6 +1,5 @@
 [Unit]
 Description=Publish XMM7360 cellular metrics to /run/cellsignal.json (Cell Signal feeder)
-ConditionPathExists=/dev/wwan0at1
 
 [Service]
 Type=oneshot

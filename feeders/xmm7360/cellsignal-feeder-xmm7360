@@ -106,10 +106,12 @@ def at_read(fd, secs, stop_on_term=True):
             chunk = os.read(fd, 4096)
         except BlockingIOError:
             continue                # no data ready yet
-        except OSError:
-            break                   # device failure (ENODEV on reset/unplug)
+        # Hard OSError (EIO/ENODEV on reset/unplug) and EOF both mean the device
+        # died mid-session: raise so read_state keeps the last published value —
+        # silently returning an empty buffer would publish a bogus error doc
+        # (and an EOF-hot select loop would spin at 100% CPU until the deadline).
         if not chunk:
-            break                   # EOF — a select()-hot loop would spin at 100% CPU
+            raise OSError('AT port EOF (device reset?)')
         buf += chunk
         if stop_on_term and (b'OK' in buf or b'ERROR' in buf):
             break

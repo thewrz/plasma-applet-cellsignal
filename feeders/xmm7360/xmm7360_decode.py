@@ -3,7 +3,8 @@
 Source commands (on the modem's command port, /dev/wwan0at1):
   AT+XCESQ?  -> +XCESQ: <mode>,<rxlev>,<ber>,<rscp>,<ecno>,<rsrq>,<rsrp>,<sinr>
                 rsrq index 0-34 (255 unknown), rsrp index 0-97 (255 unknown),
-                sinr in half-dB steps (255 unknown). 3GPP TS 27.007 mappings.
+                sinr in half-dB steps (255 unknown). 3GPP TS 27.007 mappings,
+                bin lower bounds (rsrq: 0.5*idx - 20; rsrp: idx - 141).
   AT+XMCI=1  -> +XMCI: <type>,<mcc>,<mnc>,<tac>,<ci>,<pci>,<dl_earfcn>,<ul_earfcn>,...
                 type 4/5 = serving LTE cell; dl_earfcn is a quoted hex field.
 
@@ -61,7 +62,7 @@ def parse_xcesq(text):
     if rsrp_i != 255 and 0 <= rsrp_i <= 97:
         out['rsrp_dbm'] = float(rsrp_i - 141)
     if rsrq_i != 255 and 0 <= rsrq_i <= 34:
-        out['rsrq_db'] = rsrq_i * 0.5 - 19.5
+        out['rsrq_db'] = rsrq_i * 0.5 - 20.0   # TS 27.007 bin lower bound, like rsrp
     if sinr != 255:
         out['snr_db'] = sinr / 2.0
     return out
