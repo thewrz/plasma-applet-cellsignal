@@ -68,21 +68,38 @@ def parse_xcesq(text):
     return out
 
 
-def parse_xmci_earfcn(text):
-    """Extract the serving LTE cell's DL EARFCN from an AT+XMCI response.
-    Returns None unless a serving-cell line (type 4 or 5) parses cleanly."""
+def parse_xmci(text):
+    """Extract the serving LTE cell's DL EARFCN and instantaneous measurements
+    from an AT+XMCI response. Empirically (45-sample correlation, 2026-07-18):
+    the three bare integers after the quoted-hex fields are the modem's live
+    per-sample trio (rsrp_idx, rsrq_idx, sinr_half) — they move sample to
+    sample while AT+XCESQ?'s report stays frozen for hours. Same index
+    mappings as XCESQ. Identifier fields (tac/ci/pci) are never returned."""
+    out = {'earfcn': None, 'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None}
     for line_m in _XMCI_RE.finditer(text or ''):
         if line_m.group(1) not in ('4', '5'):
             continue
-        # Fields after <type>: mcc, mnc, then quoted hex fields; dl_earfcn is
-        # the 4th quoted field (tac, ci, pci, dl_earfcn, ul_earfcn, ...).
-        quoted = re.findall(r'"0x([0-9A-Fa-f]+)"', line_m.group(2))
-        if len(quoted) < 4:
-            continue
-        try:
-            earfcn = int(quoted[3], 16)
-        except ValueError:
-            continue
-        if 0 < earfcn < 70000:
-            return earfcn
-    return None
+        rest = line_m.group(2)
+        # dl_earfcn is the 4th quoted hex field (tac, ci, pci, dl, ul, ...)
+        quoted = re.findall(r'"0x([0-9A-Fa-f]+)"', rest)
+        if len(quoted) >= 4:
+            try:
+                earfcn = int(quoted[3], 16)
+                if 0 < earfcn < 70000:
+                    out['earfcn'] = earfcn
+            except ValueError:
+                pass
+        # the measurement trio: three bare integers between quoted fields
+        trio = re.search(r'",\s*(\d+),\s*(\d+),\s*(-?\d+)\s*,\s*"', rest)
+        if trio:
+            rsrp_i, rsrq_i, sinr = (int(trio.group(1)), int(trio.group(2)),
+                                    int(trio.group(3)))
+            if 0 <= rsrp_i <= 97:
+                out['rsrp_dbm'] = float(rsrp_i - 141)
+            if 0 <= rsrq_i <= 34:
+                out['rsrq_db'] = rsrq_i * 0.5 - 20.0
+            if sinr != 255:
+                out['snr_db'] = sinr / 2.0
+        if out['earfcn'] is not None or out['rsrp_dbm'] is not None:
+            return out
+    return out

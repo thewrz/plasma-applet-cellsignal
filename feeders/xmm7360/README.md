@@ -1,10 +1,12 @@
 # xmm7360 feeder
 
 For Intel XMM7360 modems driven by the in-tree `iosm` module. Metrics come
-from the modem's AT command port (`/dev/wwan0at1`): `AT+XCESQ?` for live
-RSRP/RSRQ/SINR and `AT+XMCI=1` for the serving cell's EARFCN (band and
-frequency are derived from it). Root required (the wwan AT nodes are 0600).
-No RPC userspace tooling is needed.
+from the modem's AT command port (`/dev/wwan0at1`) via `AT+XMCI=1`, whose
+serving-cell line carries both the instantaneous measurements (RSRP/RSRQ/SINR,
+updated per sample) and the DL EARFCN (band and frequency are derived from
+it). `AT+XCESQ?` is a fallback only: its report can stay unchanged for hours.
+Root required (the wwan AT nodes are 0600). No RPC userspace tooling is
+needed.
 
 Install, from this directory (`feeders/xmm7360/`):
 

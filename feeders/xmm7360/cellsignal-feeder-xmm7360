@@ -30,7 +30,7 @@ from xmm7360_decode import (  # noqa: E402
     band_for_earfcn,
     freq_mhz_for_earfcn,
     parse_xcesq,
-    parse_xmci_earfcn,
+    parse_xmci,
     quality_pct,
 )
 
@@ -133,13 +133,19 @@ def query_modem(debug=False):
     try:
         at_read(fd, 0.4, stop_on_term=False)        # drain stale URC noise
         at_chat(fd, 'ATE0', secs=1.5, debug=debug)  # echo off; reply ignored
-        metrics = parse_xcesq(at_chat(fd, 'AT+XCESQ?', debug=debug))
-        earfcn = parse_xmci_earfcn(at_chat(fd, 'AT+XMCI=1', secs=4.0, debug=debug))
+        # XMCI is the live source: its measurement trio moves per sample,
+        # while AT+XCESQ?'s report can stay frozen for hours (45-sample
+        # side-by-side, 2026-07-18). XCESQ remains only as a fallback when
+        # a response omits the trio.
+        xmci = parse_xmci(at_chat(fd, 'AT+XMCI=1', secs=4.0, debug=debug))
+        if xmci['rsrp_dbm'] is None:
+            xmci.update({k: v for k, v in parse_xcesq(
+                at_chat(fd, 'AT+XCESQ?', debug=debug)).items() if v is not None})
     finally:
         with contextlib.suppress(OSError):
             os.close(fd)
-    out = dict(metrics)
-    out['earfcn'] = earfcn
+    out = dict(xmci)
+    earfcn = out['earfcn']
     out['band'] = band_for_earfcn(earfcn) if earfcn else None
     out['freq_mhz'] = freq_mhz_for_earfcn(earfcn) if earfcn else None
     out['quality_pct'] = quality_pct(out['rsrp_dbm']) if out['rsrp_dbm'] is not None else None

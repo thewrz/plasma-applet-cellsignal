@@ -5,7 +5,7 @@ import sys
 from importlib.machinery import SourceFileLoader
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / 'feeders' / 'xmm7360'))
-from xmm7360_decode import parse_xcesq, parse_xmci_earfcn  # noqa: E402
+from xmm7360_decode import parse_xcesq, parse_xmci  # noqa: E402
 
 from test_fixtures import (  # noqa: E402
     CELL_KEYS, FORBIDDEN_SUBSTRINGS, METRIC_KEYS, REQUIRED_TOP,
@@ -74,6 +74,7 @@ def test_parser_output_has_no_identifier_keys():
         assert bad not in keys, f'{bad!r} found in parser output keys'
 
 
-def test_xmci_parser_returns_only_earfcn():
+def test_xmci_parser_exposes_no_identifiers():
     # XMCI responses carry TAC/cell-id/PCI; the parser must expose none of them.
-    assert parse_xmci_earfcn(XMCI_LIVE) == 700
+    m = parse_xmci(XMCI_LIVE)
+    assert set(m) == {'earfcn', 'rsrp_dbm', 'rsrq_db', 'snr_db'}
