@@ -139,8 +139,12 @@ def query_modem(debug=False):
         # a response omits the trio.
         xmci = parse_xmci(at_chat(fd, 'AT+XMCI=1', secs=4.0, debug=debug))
         if xmci['rsrp_dbm'] is None:
-            xmci.update({k: v for k, v in parse_xcesq(
-                at_chat(fd, 'AT+XCESQ?', debug=debug)).items() if v is not None})
+            # Fill ONLY the missing fields from the (stale-prone) XCESQ report —
+            # a partial XMCI sample keeps whatever live values it did carry.
+            fallback = parse_xcesq(at_chat(fd, 'AT+XCESQ?', debug=debug))
+            for k, v in fallback.items():
+                if xmci.get(k) is None and v is not None:
+                    xmci[k] = v
     finally:
         with contextlib.suppress(OSError):
             os.close(fd)
