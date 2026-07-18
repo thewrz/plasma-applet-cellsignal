@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <entry name="feedCommand" type="String"><default>cat /run/cellsignal.json</default></entry>
+    <entry name="pollInterval" type="Int"><default>2</default></entry>
+    <entry name="showBars" type="Bool"><default>true</default></entry>
+    <entry name="showSparkline" type="Bool"><default>true</default></entry>
+    <entry name="showBand" type="Bool"><default>true</default></entry>
+    <entry name="showFrequency" type="Bool"><default>false</default></entry>
+    <entry name="showTech" type="Bool"><default>false</default></entry>
+    <entry name="showRsrp" type="Bool"><default>true</default></entry>
+    <entry name="showRsrq" type="Bool"><default>true</default></entry>
+    <entry name="showSnr" type="Bool"><default>true</default></entry>
+    <entry name="showRssi" type="Bool"><default>false</default></entry>
+    <entry name="sparklineMetric" type="String"><default>rsrp_dbm</default></entry>
+    <entry name="sparklineWindow" type="Int"><default>60</default></entry>
+  </group>
+</kcfg>

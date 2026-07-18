@@ -1,0 +1,15 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [{ "Email": "wrz@wrzdj.com", "Name": "Adam (thewrz)" }],
+        "Category": "System Information",
+        "Description": "Live cellular signal metrics: bars, sparkline, RSRP/RSRQ/SNR, band and frequency. Modem-agnostic via a simple JSON feed.",
+        "Icon": "network-mobile-80",
+        "Id": "com.github.thewrz.cellsignal",
+        "License": "MIT",
+        "Name": "Cell Signal",
+        "Version": "0.1.0",
+        "Website": "https://github.com/thewrz/plasma-applet-cellsignal"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
