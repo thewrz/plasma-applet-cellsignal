@@ -96,8 +96,11 @@ PlasmoidItem {
             root.history = []
         }
         function onFeedCommandChanged() {
-            // A new feed source's samples are discontinuous with the old one's
+            // A new feed source's samples are discontinuous with the old one's,
+            // and the old source's metrics must not present as live while the
+            // new command has yet to answer (or hangs)
             root.history = []
+            root.stale = true
             executable.dropAllSources()
         }
         function onSparklineWindowChanged() {
