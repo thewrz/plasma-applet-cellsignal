@@ -6,7 +6,7 @@ from xmm7360_decode import (  # noqa: E402
     band_for_earfcn,
     freq_mhz_for_earfcn,
     parse_xcesq,
-    parse_xmci_earfcn,
+    parse_xmci,
     quality_pct,
 )
 
@@ -44,13 +44,28 @@ def test_parse_xcesq_garbage():
 
 
 def test_parse_xmci_earfcn():
-    assert parse_xmci_earfcn(XMCI_LIVE) == 700   # DL EARFCN field, hex 0x2BC
+    assert parse_xmci(XMCI_LIVE)['earfcn'] == 700   # DL EARFCN field, hex 0x2BC
+
+
+def test_parse_xmci_live_trio():
+    # Trio fields are instantaneous measurements: (rsrp_idx, rsrq_idx, sinr_half)
+    m = parse_xmci(XMCI_LIVE)                       # trio 36,21,26
+    assert m['rsrp_dbm'] == -105.0                  # 36 - 141
+    assert m['rsrq_db'] == -9.5                     # 0.5*21 - 20
+    assert m['snr_db'] == 13.0                      # 26 / 2
+
+
+def test_parse_xmci_weak_sample():
+    weak = XMCI_LIVE.replace(',36,21,26,', ',30,15,18,')
+    m = parse_xmci(weak)
+    assert m['rsrp_dbm'] == -111.0 and m['rsrq_db'] == -12.5 and m['snr_db'] == 9.0
 
 
 def test_parse_xmci_rejects_non_serving_and_garbage():
-    assert parse_xmci_earfcn('+XMCI: 0,310,410,"0x1","0x2","0x3","0x00000004"') is None
-    assert parse_xmci_earfcn('OK') is None
-    assert parse_xmci_earfcn('') is None
+    empty = {'earfcn': None, 'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None}
+    assert parse_xmci('+XMCI: 0,310,410,"0x1","0x2","0x3","0x00000004"') == empty
+    assert parse_xmci('OK') == empty
+    assert parse_xmci('') == empty
 
 
 def test_band_table():
