@@ -139,6 +139,7 @@ PlasmoidItem {
             // new command has yet to answer (or hangs)
             root.history = []
             root.stale = true
+            root.lastBand = ""   // never leak a previous source's band
             executable.dropAllSources()
         }
         function onSparklineWindowChanged() {

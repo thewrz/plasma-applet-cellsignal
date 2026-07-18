@@ -44,7 +44,7 @@ MouseArea {
 
             PlasmaComponents.Label {
                 visible: plasmoid.configuration.showBand
-                text: compact.live && feed.cell.band ? feed.cell.band : "—"
+                text: compact.live ? (feed.cell.band || root.lastBand || "—") : "—"
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 font.bold: true
             }
