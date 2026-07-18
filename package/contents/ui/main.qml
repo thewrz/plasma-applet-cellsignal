@@ -14,8 +14,16 @@ PlasmoidItem {
     property var history: []
     // Watchdog: wall-clock ms of the last feed reply (0 = none yet)
     property double lastDataMs: 0
+    // Last band seen while connected — shown when a single tick reports band null
+    // (the feeder's EARFCN agreement check fails by design mid-handover)
+    property string lastBand: ""
 
     readonly property int pollInterval: Math.max(1, plasmoid.configuration.pollInterval)
+    // Staleness threshold with a floor: feeder ticks land every ~2.5-3s and a
+    // skipped tick (modem-lock contention) or slow RPC session pushes feed age
+    // past a bare 3x poll interval — the floor keeps normal jitter from
+    // flickering the panel into the dimmed state
+    readonly property int staleAfterSecs: Math.max(pollInterval * 3, 12)
     // Single source of truth for the history bound: the config page exposes 10-600,
     // but hand-edited appletsrc values bypass the SpinBox — clamp at use time too
     readonly property int sparklineWindow: Math.min(600, Math.max(10, plasmoid.configuration.sparklineWindow))
@@ -36,7 +44,8 @@ PlasmoidItem {
         if (plasmoid.configuration.showRssi && typeof m.rssi_dbm === "number")
             parts.push("RSSI " + m.rssi_dbm.toFixed(0) + " dBm")
         var cellBits = []
-        if (feed.cell.band) cellBits.push(feed.cell.band)
+        var band = feed.cell.band || lastBand
+        if (band) cellBits.push(band)
         if (typeof feed.cell.freq_mhz === "number") cellBits.push(feed.cell.freq_mhz + " MHz")
         if (feed.tech) cellBits.push(feed.tech.toUpperCase())
         if (cellBits.length) parts.push(cellBits.join(" "))
@@ -85,7 +94,12 @@ PlasmoidItem {
         }
         feed = doc
         var ageSecs = (Date.now() / 1000) - doc.ts
-        stale = ageSecs > pollInterval * 3
+        stale = ageSecs > staleAfterSecs
+        if (doc.state === "connected") {
+            if (doc.cell.band) lastBand = doc.cell.band
+        } else {
+            lastBand = ""
+        }
         var v = metricValue(doc, plasmoid.configuration.sparklineMetric)
         if (doc.state === "connected" && typeof v === "number" && isFinite(v) && !stale) {
             var h = history.slice()
@@ -141,7 +155,7 @@ PlasmoidItem {
         onTriggered: {
             // Watchdog: a feed command that never exits emits no newData, so
             // staleness must also be detected from the poll side.
-            if (Date.now() - root.lastDataMs > root.pollInterval * 3000)
+            if (Date.now() - root.lastDataMs > root.staleAfterSecs * 1000)
                 root.stale = true
             var cmd = plasmoid.configuration.feedCommand
             if (executable.connectedSources.indexOf(cmd) !== -1) {
