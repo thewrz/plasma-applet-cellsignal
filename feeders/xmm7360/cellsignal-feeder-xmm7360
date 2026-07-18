@@ -104,12 +104,15 @@ def at_read(fd, secs, stop_on_term=True):
             continue
         try:
             chunk = os.read(fd, 4096)
-        except (BlockingIOError, OSError):
-            continue
-        if chunk:
-            buf += chunk
-            if stop_on_term and (b'OK' in buf or b'ERROR' in buf):
-                break
+        except BlockingIOError:
+            continue                # no data ready yet
+        except OSError:
+            break                   # device failure (ENODEV on reset/unplug)
+        if not chunk:
+            break                   # EOF — a select()-hot loop would spin at 100% CPU
+        buf += chunk
+        if stop_on_term and (b'OK' in buf or b'ERROR' in buf):
+            break
     return buf.decode('latin-1')
 
 
@@ -149,7 +152,7 @@ def read_state(debug=False):
     if not iface_up():
         return build_contract(None, 'disconnected', int(time.time())), False
 
-    lock = open(AT_LOCK, 'w')
+    lock = open(AT_LOCK, 'a')   # append: never truncate a lock file another process holds
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:

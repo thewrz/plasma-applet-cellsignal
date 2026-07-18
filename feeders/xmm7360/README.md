@@ -20,7 +20,7 @@ Run it once so the feed file exists right away, then check it:
     sudo systemctl start --wait cellsignal-xmm7360.service
     cat /run/cellsignal.json
 
-Coexistence: the feeder shares the host's modem lock (`/run/lte.lock`) with other
+Coexistence: the feeder shares the host's modem lock (`/run/lte-at.lock`) with other
 modem tooling; a held lock skips that tick and the last published document stays
 in place. Disable any other periodic publisher that takes the same lock, or the
 skipped ticks age the feed.
