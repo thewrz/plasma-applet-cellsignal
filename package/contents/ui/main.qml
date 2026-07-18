@@ -25,9 +25,21 @@ PlasmoidItem {
     toolTipSubText: {
         if (!feed) return i18n("no feed")
         if (feed.state !== "connected") return feed.state
+        var m = feed.metrics
         var parts = []
-        if (typeof feed.metrics.rsrp_dbm === "number") parts.push("RSRP " + feed.metrics.rsrp_dbm.toFixed(0) + " dBm")
-        if (feed.cell.band) parts.push(feed.cell.band)
+        if (plasmoid.configuration.showRsrp && typeof m.rsrp_dbm === "number")
+            parts.push("RSRP " + m.rsrp_dbm.toFixed(0) + " dBm")
+        if (plasmoid.configuration.showRsrq && typeof m.rsrq_db === "number")
+            parts.push("RSRQ " + m.rsrq_db.toFixed(1) + " dB")
+        if (plasmoid.configuration.showSnr && typeof m.snr_db === "number")
+            parts.push("SNR " + m.snr_db.toFixed(1) + " dB")
+        if (plasmoid.configuration.showRssi && typeof m.rssi_dbm === "number")
+            parts.push("RSSI " + m.rssi_dbm.toFixed(0) + " dBm")
+        var cellBits = []
+        if (feed.cell.band) cellBits.push(feed.cell.band)
+        if (typeof feed.cell.freq_mhz === "number") cellBits.push(feed.cell.freq_mhz + " MHz")
+        if (feed.tech) cellBits.push(feed.tech.toUpperCase())
+        if (cellBits.length) parts.push(cellBits.join(" "))
         return parts.join(" · ") + (stale ? i18n(" (stale)") : "")
     }
 
