@@ -89,9 +89,11 @@ def build_contract(decoded, state, now):
 
 
 def iface_up():
-    r = subprocess.run(['ip', '-4', '-o', 'addr', 'show', 'dev', IFACE],
+    # Either address family counts: some carriers assign IPv6-only bearers.
+    # scope global excludes the link-local fe80:: that every up interface has.
+    r = subprocess.run(['ip', '-o', 'addr', 'show', 'dev', IFACE, 'scope', 'global'],
                        capture_output=True, text=True)
-    return 'inet ' in r.stdout
+    return 'inet' in r.stdout
 
 
 def drain_port(fd, quiet_secs=0.4, max_secs=3.0):
@@ -147,12 +149,16 @@ def catch_indication(debug=False):
 
 
 def read_state(debug=False):
-    """Return (contract_doc | None, keep_last: bool)."""
-    now = int(time.time())
+    """Return (contract_doc | None, keep_last: bool).
+
+    ts is stamped at PUBLICATION time, never at session start: a slow RPC
+    session (up to ~19s of timeout budget) would otherwise publish a document
+    already past consumers' staleness thresholds.
+    """
     if not os.path.exists(RPC_NODE):
-        return build_contract(None, 'no-modem', now), False
+        return build_contract(None, 'no-modem', int(time.time())), False
     if not iface_up():
-        return build_contract(None, 'disconnected', now), False
+        return build_contract(None, 'disconnected', int(time.time())), False
 
     lock = open(LOCK, 'w')
     try:
@@ -164,7 +170,7 @@ def read_state(debug=False):
             ints = catch_indication(debug)
         except ToolingError as e:
             print(f'cellsignal-feeder: {e}', file=sys.stderr)
-            return build_contract(None, 'error', now), False
+            return build_contract(None, 'error', int(time.time())), False
         except (Timeout, OSError, AssertionError, ValueError, IndexError,
                 KeyError, struct.error) as e:
             # Malformed/truncated RPC messages raise Assertion/Value/Index/
@@ -177,11 +183,11 @@ def read_state(debug=False):
         lock.close()
 
     if not ints:
-        return build_contract(None, 'error', now), False
+        return build_contract(None, 'error', int(time.time())), False
     decoded = decode_indication(ints)
     if decoded['rsrp_dbm'] is None:
-        return build_contract(None, 'error', now), False
-    return build_contract(decoded, 'connected', now), False
+        return build_contract(None, 'error', int(time.time())), False
+    return build_contract(decoded, 'connected', int(time.time())), False
 
 
 def main():
