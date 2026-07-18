@@ -1,8 +1,10 @@
 # xmm7360 feeder
 
-For Intel XMM7360 modems driven by the in-tree `iosm` module + the
-`xmm7360-pci-spat` userspace RPC tooling (expected at
-`/usr/lib/xmm7360-pci-spat/rpc/`). Root required (the wwan RPC node is 0600).
+For Intel XMM7360 modems driven by the in-tree `iosm` module. Metrics come
+from the modem's AT command port (`/dev/wwan0at1`): `AT+XCESQ?` for live
+RSRP/RSRQ/SINR and `AT+XMCI=1` for the serving cell's EARFCN (band and
+frequency are derived from it). Root required (the wwan AT nodes are 0600).
+No RPC userspace tooling is needed.
 
 Install, from this directory (`feeders/xmm7360/`):
 
@@ -18,7 +20,7 @@ Run it once so the feed file exists right away, then check it:
     sudo systemctl start --wait cellsignal-xmm7360.service
     cat /run/cellsignal.json
 
-Coexistence: the feeder shares the host's modem lock (`/run/lte.lock`) with other
+Coexistence: the feeder shares the host's modem lock (`/run/lte-at.lock`) with other
 modem tooling; a held lock skips that tick and the last published document stays
 in place. Disable any other periodic publisher that takes the same lock, or the
 skipped ticks age the feed.
