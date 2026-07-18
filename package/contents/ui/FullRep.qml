@@ -40,7 +40,8 @@ ColumnLayout {
                 text: {
                     if (!full.live) return ""
                     var parts = []
-                    if (feed.cell.band) parts.push(feed.cell.band)
+                    var band = feed.cell.band || root.lastBand
+                    if (band) parts.push(band)
                     if (feed.cell.freq_mhz != null) parts.push(feed.cell.freq_mhz + " MHz")
                     if (feed.tech) parts.push(feed.tech.toUpperCase())
                     return parts.join(" · ")
