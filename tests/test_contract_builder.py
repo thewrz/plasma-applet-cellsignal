@@ -5,12 +5,12 @@ import sys
 from importlib.machinery import SourceFileLoader
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / 'feeders' / 'xmm7360'))
-from xmm7360_decode import decode_indication  # noqa: E402
+from xmm7360_decode import parse_xcesq, parse_xmci_earfcn  # noqa: E402
 
 from test_fixtures import (  # noqa: E402
     CELL_KEYS, FORBIDDEN_SUBSTRINGS, METRIC_KEYS, REQUIRED_TOP,
 )
-from test_xmm7360_decode import SAMPLE  # noqa: E402
+from test_xmm7360_decode import XCESQ_LIVE, XMCI_LIVE  # noqa: E402
 
 FEEDER = pathlib.Path(__file__).parent.parent / 'feeders' / 'xmm7360' / 'cellsignal-feeder-xmm7360'
 
@@ -68,7 +68,12 @@ def test_published_document_has_no_identifiers():
         assert bad not in lowered, f'{bad!r} found in published document'
 
 
-def test_decoder_output_has_no_identifier_keys():
-    keys = ' '.join(decode_indication(SAMPLE)).lower()
+def test_parser_output_has_no_identifier_keys():
+    keys = ' '.join(parse_xcesq(XCESQ_LIVE)).lower()
     for bad in FORBIDDEN_SUBSTRINGS:
-        assert bad not in keys, f'{bad!r} found in decoder output keys'
+        assert bad not in keys, f'{bad!r} found in parser output keys'
+
+
+def test_xmci_parser_returns_only_earfcn():
+    # XMCI responses carry TAC/cell-id/PCI; the parser must expose none of them.
+    assert parse_xmci_earfcn(XMCI_LIVE) == 700

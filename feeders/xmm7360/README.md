@@ -1,8 +1,10 @@
 # xmm7360 feeder
 
-For Intel XMM7360 modems driven by the in-tree `iosm` module + the
-`xmm7360-pci-spat` userspace RPC tooling (expected at
-`/usr/lib/xmm7360-pci-spat/rpc/`). Root required (the wwan RPC node is 0600).
+For Intel XMM7360 modems driven by the in-tree `iosm` module. Metrics come
+from the modem's AT command port (`/dev/wwan0at1`): `AT+XCESQ?` for live
+RSRP/RSRQ/SINR and `AT+XMCI=1` for the serving cell's EARFCN (band and
+frequency are derived from it). Root required (the wwan AT nodes are 0600).
+No RPC userspace tooling is needed.
 
 Install, from this directory (`feeders/xmm7360/`):
 

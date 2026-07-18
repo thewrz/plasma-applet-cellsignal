@@ -1,47 +1,47 @@
 #!/usr/bin/env python3
-"""cellsignal feeder for the Intel XMM7360 (iosm + xmm7360-pci-spat userspace).
+"""cellsignal feeder for the Intel XMM7360 (iosm kernel driver).
 
 Publishes Cell Signal contract-v1 JSON (see docs/CONTRACT.md) to /run/cellsignal.json.
-Per tick: flock the shared modem lock, open the RPC port, drain stale messages,
-enable radio-signal reporting, catch one UtaMsNetRadioSignalIndCb, disable, close.
-Never publishes device/subscriber identifiers — metrics only, by contract.
+Per tick: query the modem's AT command port for live measurements (AT+XCESQ? for
+RSRP/RSRQ/SINR, AT+XMCI=1 for the serving cell's EARFCN -> band/frequency).
+Never publishes device/subscriber identifiers — metrics only, by contract
+(XMCI's TAC/cell-id/PCI fields are parsed past, never returned).
+
+The AT port is a wwan char device, not a tty: plain fd + select with generous
+read windows, replies terminated by OK/ERROR. /dev/wwan0at1 answers commands;
+/dev/wwan0at0 only broadcasts URCs. Port access is serialized with other AT
+tooling on the host via /run/lte-at.lock.
 
 usage: cellsignal-feeder-xmm7360 [--print|--write|--debug]
 """
 import contextlib
 import fcntl
-import io
 import json
 import os
 import select
 import signal
-import struct
 import subprocess
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from xmm7360_decode import decode_indication  # noqa: E402
-
-RPC_DIR = '/usr/lib/xmm7360-pci-spat/rpc'
-sys.path.insert(0, RPC_DIR)
+from xmm7360_decode import (  # noqa: E402
+    band_for_earfcn,
+    freq_mhz_for_earfcn,
+    parse_xcesq,
+    parse_xmci_earfcn,
+    quality_pct,
+)
 
 OUT = '/run/cellsignal.json'
-LOCK = '/run/lte.lock'          # shared with the lte wrapper on this host
+AT_PORT = '/dev/wwan0at1'       # command port; at0 is URC-broadcast only
+AT_LOCK = '/run/lte-at.lock'    # shared with other AT tooling (e.g. lte status)
 IFACE = 'wwan0'
-RPC_NODE = '/dev/wwan0xmmrpc0'
-IND_NAME = 'UtaMsNetRadioSignalIndCb'
-SETTER = 'UtaMsNetSetRadioSignalReporting'
-IND_WAIT_SECS = 6
 
 
 class Timeout(Exception):
     pass
-
-
-class ToolingError(Exception):
-    """The xmm7360 RPC userspace tooling is missing or incompatible."""
 
 
 def with_timeout(secs, fn, *args, **kw):
@@ -96,96 +96,77 @@ def iface_up():
     return 'inet' in r.stdout
 
 
-def drain_port(fd, quiet_secs=0.4, max_secs=3.0):
-    start = time.time()
-    while time.time() - start < max_secs:
-        readable, _, _ = select.select([fd], [], [], quiet_secs)
+def at_read(fd, secs, stop_on_term=True):
+    buf, end = b'', time.time() + secs
+    while time.time() < end:
+        readable, _, _ = select.select([fd], [], [], 0.15)
         if not readable:
-            return
+            continue
         try:
-            os.read(fd, 131072)
-        except OSError:
-            return
-
-
-def catch_indication(debug=False):
-    try:
-        import rpc                 # noqa: E402
-        import rpc_unsol_table     # noqa: E402
-    except ImportError as e:
-        raise ToolingError(f'rpc tooling not importable from {RPC_DIR}: {e}') from e
-    ind_code = next((code for code, name in rpc_unsol_table.xmm7360_unsol.items()
-                     if name == IND_NAME), None)
-    if ind_code is None:
-        raise ToolingError(f'{IND_NAME} missing from rpc_unsol_table')
-    quiet = io.StringIO()
-    r = with_timeout(6, rpc.XMMRPC)
-    ints = None
-    try:
-        drain_port(r.fp)
-        with contextlib.redirect_stdout(sys.stderr if debug else quiet):
-            with_timeout(6, r.execute, SETTER, rpc.asn_int4(1))
-        end = time.time() + IND_WAIT_SECS
-        while time.time() < end:
-            readable, _, _ = select.select([r.fp], [], [], 0.3)
-            if not readable:
-                continue
-            msg = with_timeout(5, os.read, r.fp, 131072)
-            parsed = r.handle_message(msg)
-            if parsed['type'] == 'unsolicited' and parsed['code'] == ind_code:
-                ints = parsed['content']
+            chunk = os.read(fd, 4096)
+        except (BlockingIOError, OSError):
+            continue
+        if chunk:
+            buf += chunk
+            if stop_on_term and (b'OK' in buf or b'ERROR' in buf):
                 break
+    return buf.decode('latin-1')
+
+
+def at_chat(fd, cmd, secs=3.0, debug=False):
+    os.write(fd, cmd.encode('ascii') + b'\r')
+    resp = at_read(fd, secs)
+    if debug:
+        print(f'{cmd} -> {resp!r}', file=sys.stderr)
+    return resp
+
+
+def query_modem(debug=False):
+    """One AT session: {rsrp_dbm, rsrq_db, snr_db, band, earfcn, freq_mhz,
+    quality_pct} — measurement fields may be None per the parsers."""
+    fd = with_timeout(5, os.open, AT_PORT, os.O_RDWR | os.O_NONBLOCK)
+    try:
+        at_read(fd, 0.4, stop_on_term=False)        # drain stale URC noise
+        at_chat(fd, 'ATE0', secs=1.5, debug=debug)  # echo off; reply ignored
+        metrics = parse_xcesq(at_chat(fd, 'AT+XCESQ?', debug=debug))
+        earfcn = parse_xmci_earfcn(at_chat(fd, 'AT+XMCI=1', secs=4.0, debug=debug))
     finally:
-        try:
-            with contextlib.redirect_stdout(sys.stderr if debug else quiet):
-                with_timeout(4, r.execute, SETTER, rpc.asn_int4(0))
-        except Exception:
-            pass
-        try:
-            os.close(r.fp)
-        except OSError:
-            pass
-    return ints
+        with contextlib.suppress(OSError):
+            os.close(fd)
+    out = dict(metrics)
+    out['earfcn'] = earfcn
+    out['band'] = band_for_earfcn(earfcn) if earfcn else None
+    out['freq_mhz'] = freq_mhz_for_earfcn(earfcn) if earfcn else None
+    out['quality_pct'] = quality_pct(out['rsrp_dbm']) if out['rsrp_dbm'] is not None else None
+    return out
 
 
 def read_state(debug=False):
     """Return (contract_doc | None, keep_last: bool).
-
-    ts is stamped at PUBLICATION time, never at session start: a slow RPC
-    session (up to ~19s of timeout budget) would otherwise publish a document
-    already past consumers' staleness thresholds.
-    """
-    if not os.path.exists(RPC_NODE):
+    ts is stamped at publication time, after the AT session completes."""
+    if not os.path.exists(AT_PORT):
         return build_contract(None, 'no-modem', int(time.time())), False
     if not iface_up():
         return build_contract(None, 'disconnected', int(time.time())), False
 
-    lock = open(LOCK, 'w')
+    lock = open(AT_LOCK, 'w')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        return None, True
+        return None, True       # another AT client holds the port; keep last value
     try:
         try:
-            ints = catch_indication(debug)
-        except ToolingError as e:
-            print(f'cellsignal-feeder: {e}', file=sys.stderr)
-            return build_contract(None, 'error', int(time.time())), False
-        except (Timeout, OSError, AssertionError, ValueError, IndexError,
-                KeyError, struct.error) as e:
-            # Malformed/truncated RPC messages raise Assertion/Value/Index/
-            # struct errors from the tooling's unpack path; treat them all
-            # as a failed session and keep the last published value.
-            print(f'cellsignal-feeder: rpc session failed ({type(e).__name__}: {e}); '
+            decoded = query_modem(debug)
+        except (Timeout, OSError) as e:
+            print(f'cellsignal-feeder: AT session failed ({type(e).__name__}: {e}); '
                   f'keeping last value', file=sys.stderr)
             return None, True
     finally:
         lock.close()
 
-    if not ints:
-        return build_contract(None, 'error', int(time.time())), False
-    decoded = decode_indication(ints)
     if decoded['rsrp_dbm'] is None:
+        # Port answered but no measurement — modem attached-but-idle or mid-
+        # transition; report error rather than fabricate.
         return build_contract(None, 'error', int(time.time())), False
     return build_contract(decoded, 'connected', int(time.time())), False
 
@@ -195,7 +176,7 @@ def main():
     if mode not in ('--print', '--write', '--debug'):
         sys.exit(f'usage: cellsignal-feeder-xmm7360 [--print|--write|--debug]  (--write -> {OUT})')
     if os.geteuid() != 0:
-        sys.exit('cellsignal-feeder-xmm7360: needs root for the RPC port')
+        sys.exit('cellsignal-feeder-xmm7360: needs root for the modem AT port')
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
 
     doc, keep_last = read_state(debug=(mode == '--debug'))

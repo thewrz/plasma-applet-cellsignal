@@ -1,14 +1,20 @@
-"""Decode the XMM7360 UtaMsNetRadioSignalIndCb indication into signal metrics.
+"""Parse XMM7360 AT measurement responses into signal metrics.
 
-Field map (empirically derived by this project, validated across bands B2/B12 —
-no upstream driver or ModemManager plugin decodes this indication):
-  ints[-7]  as s16 / 16          -> RSRP dBm  (Intel Q4 fixed point)
-  ints[-8]  as s16 / 100         -> SNR dB
-  ints[-10] high 16 bits, s16/16 -> RSRQ dB
-  ints[-12] == ints[-5]          -> serving-cell EARFCN (both slots must agree)
-Earlier positions hold neighbor tables and per-tick scan frequencies — never
-scan them for EARFCN-shaped values; they flicker and false-match band ranges.
+Source commands (on the modem's command port, /dev/wwan0at1):
+  AT+XCESQ?  -> +XCESQ: <mode>,<rxlev>,<ber>,<rscp>,<ecno>,<rsrq>,<rsrp>,<sinr>
+                rsrq index 0-34 (255 unknown), rsrp index 0-97 (255 unknown),
+                sinr in half-dB steps (255 unknown). 3GPP TS 27.007 mappings.
+  AT+XMCI=1  -> +XMCI: <type>,<mcc>,<mnc>,<tac>,<ci>,<pci>,<dl_earfcn>,<ul_earfcn>,...
+                type 4/5 = serving LTE cell; dl_earfcn is a quoted hex field.
+
+History note: this project first decoded the RPC channel's radio-signal
+indication. Hardware correlation (2026-07-18) proved those fields were the
+serving cell's IDENTITY (cell-id/PCI packed words) — constants that merely
+looked like plausible RF values — while these AT queries return the actual
+live measurements. The privacy rule stands: parse only measurements; never
+return TAC/cell-id/PCI.
 """
+import re
 
 # DL EARFCN ranges -> LTE band. AT&T-operated bands only by default: every extra
 # range is false-match surface. Extend deliberately for other carriers.
@@ -19,9 +25,9 @@ BAND_RANGES = [
     (66436, 67335, 'B66', 1700), (68586, 68935, 'B71', 600),
 ]
 
-
-def _s16(v):
-    return v - 0x10000 if 0x8000 <= v <= 0xffff else v
+_XCESQ_RE = re.compile(
+    r'\+XCESQ:\s*\d+,\s*\d+,\s*\d+,\s*\d+,\s*\d+,\s*(\d+),\s*(\d+),\s*(-?\d+)')
+_XMCI_RE = re.compile(r'\+XMCI:\s*([0-9]+),(.*)')
 
 
 def band_for_earfcn(earfcn):
@@ -44,30 +50,38 @@ def quality_pct(rsrp_dbm):
     return int(max(0, min(100, round(pct))))
 
 
-def decode_indication(ints):
-    nums = [v for v in ints if isinstance(v, int)]
-    out = {'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None,
-           'band': None, 'earfcn': None, 'freq_mhz': None, 'quality_pct': None}
-    if len(nums) < 12:
+def parse_xcesq(text):
+    """Extract {rsrp_dbm, rsrq_db, snr_db} from an AT+XCESQ? response.
+    Unknown markers (255) and unparseable input yield None values."""
+    out = {'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None}
+    m = _XCESQ_RE.search(text or '')
+    if not m:
         return out
-
-    cand = _s16(nums[-7]) if nums[-7] <= 0xffff else None
-    if cand is not None and -2256 <= cand <= -640:            # -141..-40 dBm in Q4
-        out['rsrp_dbm'] = cand / 16.0
-        out['quality_pct'] = quality_pct(out['rsrp_dbm'])
-
-    snr = _s16(nums[-8]) if nums[-8] <= 0xffff else None
-    if snr is not None and -1000 <= snr <= 4000:              # -10..+40 dB centi-dB
-        out['snr_db'] = snr / 100.0
-
-    word = nums[-10]
-    if word > 0xffff:
-        hi = _s16((word >> 16) & 0xffff)
-        if -544 <= hi <= 0:                                   # -34..0 dB in Q4
-            out['rsrq_db'] = hi / 16.0
-
-    if nums[-12] == nums[-5] and band_for_earfcn(nums[-12]):
-        out['earfcn'] = nums[-12]
-        out['band'] = band_for_earfcn(nums[-12])
-        out['freq_mhz'] = freq_mhz_for_earfcn(nums[-12])
+    rsrq_i, rsrp_i, sinr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if rsrp_i != 255 and 0 <= rsrp_i <= 97:
+        out['rsrp_dbm'] = float(rsrp_i - 141)
+    if rsrq_i != 255 and 0 <= rsrq_i <= 34:
+        out['rsrq_db'] = rsrq_i * 0.5 - 19.5
+    if sinr != 255:
+        out['snr_db'] = sinr / 2.0
     return out
+
+
+def parse_xmci_earfcn(text):
+    """Extract the serving LTE cell's DL EARFCN from an AT+XMCI response.
+    Returns None unless a serving-cell line (type 4 or 5) parses cleanly."""
+    for line_m in _XMCI_RE.finditer(text or ''):
+        if line_m.group(1) not in ('4', '5'):
+            continue
+        # Fields after <type>: mcc, mnc, then quoted hex fields; dl_earfcn is
+        # the 4th quoted field (tac, ci, pci, dl_earfcn, ul_earfcn, ...).
+        quoted = re.findall(r'"0x([0-9A-Fa-f]+)"', line_m.group(2))
+        if len(quoted) < 4:
+            continue
+        try:
+            earfcn = int(quoted[3], 16)
+        except ValueError:
+            continue
+        if 0 < earfcn < 70000:
+            return earfcn
+    return None
