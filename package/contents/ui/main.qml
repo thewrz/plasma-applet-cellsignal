@@ -80,7 +80,7 @@ PlasmoidItem {
             stale = true
             return
         }
-        if (!doc || doc.version !== 1
+        if (!doc || [1, 2].indexOf(doc.version) < 0
                 || typeof doc.ts !== "number" || !isFinite(doc.ts)
                 || ["connected", "disconnected", "no-modem", "error"].indexOf(doc.state) < 0
                 || typeof doc.metrics !== "object" || doc.metrics === null

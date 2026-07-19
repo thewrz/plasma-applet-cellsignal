@@ -10,12 +10,21 @@ from xmm7360_decode import parse_xcesq, parse_xmci  # noqa: E402
 from test_fixtures import (  # noqa: E402
     CELL_KEYS, FORBIDDEN_SUBSTRINGS, METRIC_KEYS, REQUIRED_TOP,
 )
-from test_xmm7360_decode import XCESQ_LIVE, XMCI_LIVE  # noqa: E402
+from test_xmm7360_decode import (  # noqa: E402
+    GTCAINFO_SINGLE,
+    XCESQ_LIVE,
+    XMCI_LIVE,
+)
 
 FEEDER = pathlib.Path(__file__).parent.parent / 'feeders' / 'xmm7360' / 'cellsignal-feeder-xmm7360'
 
 DECODED = {'rsrp_dbm': -95.0, 'rsrq_db': -12.9, 'snr_db': 16.5,
-           'band': 'B12', 'earfcn': 5110, 'freq_mhz': 700, 'quality_pct': 62}
+           'band': 'B12', 'earfcn': 5110, 'freq_mhz': 700, 'quality_pct': 62,
+           'bandwidth_mhz': 10, 'timing_advance': 28, 'distance_m': 2188,
+           'rrc_state': 'connected', 'carriers': 2, 'bands': ['B12', 'B2'],
+           'aggregate_mhz': 30, 'operator': 'MOBILE',
+           'neighbors': [{'band': 'B2', 'earfcn': 700,
+                          'rsrp_dbm': -105.0, 'rsrq_db': -15.0}]}
 
 
 def load_feeder():
@@ -28,14 +37,19 @@ def load_feeder():
 
 def test_build_contract_connected():
     m = load_feeder()
-    decoded = {'rsrp_dbm': -95.0, 'rsrq_db': -12.9, 'snr_db': 16.5,
-               'band': 'B12', 'earfcn': 5110, 'freq_mhz': 700, 'quality_pct': 62}
-    doc = m.build_contract(decoded, 'connected', now=1789000000)
-    assert doc['version'] == 1 and doc['ts'] == 1789000000
+    doc = m.build_contract(DECODED, 'connected', now=1789000000)
+    assert doc['version'] == 2 and doc['ts'] == 1789000000
     assert doc['state'] == 'connected' and doc['tech'] == 'lte'
     assert doc['metrics']['rsrp_dbm'] == -95.0
     assert doc['metrics']['rssi_dbm'] is None
-    assert doc['cell'] == {'band': 'B12', 'earfcn': 5110, 'freq_mhz': 700}
+    assert doc['cell'] == {'band': 'B12', 'earfcn': 5110, 'freq_mhz': 700,
+                           'bandwidth_mhz': 10, 'timing_advance': 28,
+                           'distance_m': 2188, 'rrc_state': 'connected'}
+    assert doc['aggregation'] == {'carriers': 2, 'bands': ['B12', 'B2'],
+                                  'aggregate_mhz': 30}
+    assert doc['neighbors'] == [{'band': 'B2', 'earfcn': 700,
+                                 'rsrp_dbm': -105.0, 'rsrq_db': -15.0}]
+    assert doc['operator'] == 'MOBILE'
     assert doc['source'] == 'xmm7360'
     json.dumps(doc)  # serializable
 
@@ -46,7 +60,19 @@ def test_build_contract_down_states():
         doc = m.build_contract(None, state, now=5)
         assert doc['state'] == state and doc['tech'] is None
         assert all(v is None for v in doc['metrics'].values())
+        assert all(v is None for v in doc['cell'].values())
         assert doc['quality_pct'] is None
+        assert doc['aggregation'] is None
+        assert doc['neighbors'] == []          # array, empty when none
+        assert doc['operator'] is None
+
+
+def test_build_contract_aggregation_null_without_ca():
+    # No GTCAINFO carrier count -> aggregation is null (not a hollow object).
+    m = load_feeder()
+    doc = m.build_contract({'rsrp_dbm': -95.0, 'earfcn': 5110}, 'connected', now=1)
+    assert doc['aggregation'] is None
+    assert doc['neighbors'] == []
 
 
 def test_contract_key_sets_pinned_exactly():
@@ -77,4 +103,36 @@ def test_parser_output_has_no_identifier_keys():
 def test_xmci_parser_exposes_no_identifiers():
     # XMCI responses carry TAC/cell-id/PCI; the parser must expose none of them.
     m = parse_xmci(XMCI_LIVE)
-    assert set(m) == {'earfcn', 'rsrp_dbm', 'rsrq_db', 'snr_db'}
+    assert set(m) == {'earfcn', 'rsrp_dbm', 'rsrq_db', 'snr_db',
+                      'timing_advance', 'neighbors'}
+    # neighbour records likewise expose only measurements, never identifiers.
+    from test_xmm7360_decode import XMCI_WITH_NEIGHBOR  # noqa: E402
+    for n in parse_xmci(XMCI_WITH_NEIGHBOR)['neighbors']:
+        assert set(n) == {'band', 'earfcn', 'rsrp_dbm', 'rsrq_db'}
+
+
+def test_query_modem_caches_missing_operator(monkeypatch, tmp_path):
+    m = load_feeder()
+    m.OP_CACHE = str(tmp_path / 'operator')
+    commands = []
+    responses = {
+        'ATE0': 'OK',
+        'AT+XMCI=1': XMCI_LIVE,
+        'AT+GTCAINFO?': GTCAINFO_SINGLE,
+        'AT+CSCON?': '+CSCON: 0,1\r\nOK',
+        'AT+COPS?': '+COPS: 0,2,"310410"\r\nOK',
+    }
+
+    monkeypatch.setattr(m, 'with_timeout', lambda *_args, **_kwargs: 7)
+    monkeypatch.setattr(m, 'at_read', lambda *_args, **_kwargs: '')
+    monkeypatch.setattr(m.os, 'close', lambda _fd: None)
+
+    def fake_at_chat(_fd, command, **_kwargs):
+        commands.append(command)
+        return responses[command]
+
+    monkeypatch.setattr(m, 'at_chat', fake_at_chat)
+
+    assert m.query_modem()['operator'] is None
+    assert m.query_modem()['operator'] is None
+    assert commands.count('AT+COPS?') == 1
