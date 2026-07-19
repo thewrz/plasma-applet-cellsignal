@@ -187,6 +187,7 @@ def query_modem(debug=False):
     #15 drills. Operator is served from a short-lived cache to skip most COPS
     round-trips."""
     operator = read_operator_cache()
+    cached = operator is not None
     fd = with_timeout(5, os.open, AT_PORT, os.O_RDWR | os.O_NONBLOCK)
     try:
         at_read(fd, 0.4, stop_on_term=False)        # drain stale URC noise
@@ -210,7 +211,10 @@ def query_modem(debug=False):
     finally:
         with contextlib.suppress(OSError):
             os.close(fd)
-    write_operator_cache(operator)
+    # Only rewrite the cache on a fresh COPS query, so the file's mtime tracks
+    # the last real query and the OP_TTL age check can actually expire.
+    if not cached:
+        write_operator_cache(operator)
     out = dict(xmci)
     earfcn = out['earfcn']
     out['band'] = band_for_earfcn(earfcn) if earfcn else None

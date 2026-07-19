@@ -16,7 +16,7 @@ CELL_KEYS_V2 = CELL_KEYS_V1 | {'bandwidth_mhz', 'timing_advance', 'distance_m', 
 NEIGHBOR_KEYS = {'band', 'earfcn', 'rsrp_dbm', 'rsrq_db'}
 AGGREGATION_KEYS = {'carriers', 'bands', 'aggregate_mhz'}
 STATES = {'connected', 'disconnected', 'no-modem', 'error'}
-FORBIDDEN_SUBSTRINGS = ('imei', 'iccid', 'imsi', 'cell_id', 'cellid', 'tac', 'pci')
+FORBIDDEN_SUBSTRINGS = ('imei', 'iccid', 'imsi', 'cell_id', 'cellid', 'cid', 'tac', 'pci')
 
 # Names kept for consumers that build the current (v2) document.
 REQUIRED_TOP = REQUIRED_TOP_V2
