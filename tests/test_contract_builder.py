@@ -10,7 +10,11 @@ from xmm7360_decode import parse_xcesq, parse_xmci  # noqa: E402
 from test_fixtures import (  # noqa: E402
     CELL_KEYS, FORBIDDEN_SUBSTRINGS, METRIC_KEYS, REQUIRED_TOP,
 )
-from test_xmm7360_decode import XCESQ_LIVE, XMCI_LIVE  # noqa: E402
+from test_xmm7360_decode import (  # noqa: E402
+    GTCAINFO_SINGLE,
+    XCESQ_LIVE,
+    XMCI_LIVE,
+)
 
 FEEDER = pathlib.Path(__file__).parent.parent / 'feeders' / 'xmm7360' / 'cellsignal-feeder-xmm7360'
 
@@ -105,3 +109,30 @@ def test_xmci_parser_exposes_no_identifiers():
     from test_xmm7360_decode import XMCI_WITH_NEIGHBOR  # noqa: E402
     for n in parse_xmci(XMCI_WITH_NEIGHBOR)['neighbors']:
         assert set(n) == {'band', 'earfcn', 'rsrp_dbm', 'rsrq_db'}
+
+
+def test_query_modem_caches_missing_operator(monkeypatch, tmp_path):
+    m = load_feeder()
+    m.OP_CACHE = str(tmp_path / 'operator')
+    commands = []
+    responses = {
+        'ATE0': 'OK',
+        'AT+XMCI=1': XMCI_LIVE,
+        'AT+GTCAINFO?': GTCAINFO_SINGLE,
+        'AT+CSCON?': '+CSCON: 0,1\r\nOK',
+        'AT+COPS?': '+COPS: 0,2,"310410"\r\nOK',
+    }
+
+    monkeypatch.setattr(m, 'with_timeout', lambda *_args, **_kwargs: 7)
+    monkeypatch.setattr(m, 'at_read', lambda *_args, **_kwargs: '')
+    monkeypatch.setattr(m.os, 'close', lambda _fd: None)
+
+    def fake_at_chat(_fd, command, **_kwargs):
+        commands.append(command)
+        return responses[command]
+
+    monkeypatch.setattr(m, 'at_chat', fake_at_chat)
+
+    assert m.query_modem()['operator'] is None
+    assert m.query_modem()['operator'] is None
+    assert commands.count('AT+COPS?') == 1

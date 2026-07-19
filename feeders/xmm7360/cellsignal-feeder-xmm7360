@@ -114,26 +114,30 @@ def build_contract(decoded, state, now):
 
 
 def read_operator_cache():
-    """Return the cached operator name if fresh, else None. The operator
-    changes rarely, so a cache spares an AT+COPS? round-trip most ticks."""
+    """Return ``(is_fresh, operator)`` for the operator cache.
+
+    A fresh empty file is a negative-cache entry, distinct from a missing or
+    expired cache, so an unavailable operator also suppresses COPS queries for
+    the TTL.
+    """
     try:
         if time.time() - os.stat(OP_CACHE).st_mtime > OP_TTL:
-            return None
+            return False, None
         with open(OP_CACHE) as f:
-            return f.read().strip() or None
+            return True, f.read().strip() or None
     except OSError:
-        return None
+        return False, None
 
 
 def write_operator_cache(name):
-    """Persist the operator name atomically. Best-effort: cache-write failures
-    never abort a publish."""
-    if not name:
-        return
+    """Persist an operator lookup atomically, including a negative result.
+
+    Best-effort: cache-write failures never abort a publish.
+    """
     try:
         fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OP_CACHE), prefix='.cellsignal-op.')
         with os.fdopen(fd, 'w') as f:
-            f.write(name + '\n')
+            f.write((name or '') + '\n')
             os.fchmod(f.fileno(), 0o644)
         os.replace(tmp, OP_CACHE)
     except OSError:
@@ -186,8 +190,7 @@ def query_modem(debug=False):
     All four reads (XMCI/GTCAINFO/CSCON/COPS) were validated non-wedging in the
     #15 drills. Operator is served from a short-lived cache to skip most COPS
     round-trips."""
-    operator = read_operator_cache()
-    cached = operator is not None
+    cached, operator = read_operator_cache()
     fd = with_timeout(5, os.open, AT_PORT, os.O_RDWR | os.O_NONBLOCK)
     try:
         at_read(fd, 0.4, stop_on_term=False)        # drain stale URC noise
@@ -206,7 +209,7 @@ def query_modem(debug=False):
                     xmci[k] = v
         gtca = parse_gtcainfo(at_chat(fd, 'AT+GTCAINFO?', secs=3.0, debug=debug))
         rrc = parse_cscon(at_chat(fd, 'AT+CSCON?', secs=2.0, debug=debug))
-        if operator is None:
+        if not cached:
             operator = parse_cops_operator(at_chat(fd, 'AT+COPS?', secs=3.0, debug=debug))
     finally:
         with contextlib.suppress(OSError):
