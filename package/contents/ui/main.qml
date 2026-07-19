@@ -2,6 +2,7 @@ import QtQuick
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.kirigami as Kirigami
+import "hud" as Hud
 
 PlasmoidItem {
     id: root
@@ -28,6 +29,31 @@ PlasmoidItem {
     // but hand-edited appletsrc values bypass the SpinBox — clamp at use time too
     readonly property int sparklineWindow: Math.min(600, Math.max(10, plasmoid.configuration.sparklineWindow))
     readonly property bool connected: feed !== null && feed.state === "connected" && !stale
+
+    // Motion gate: Kirigami scales animation durations with the platform's
+    // "Animation speed" setting, collapsing to 1ms when the user disables
+    // animations. Every HUD animation checks this before running/easing.
+    readonly property bool animationsEnabled: Kirigami.Units.longDuration > 1
+    // 0..1 glow strength for HudFrame, from the config percentage.
+    readonly property real glowIntensity: Math.max(0, Math.min(100, plasmoid.configuration.glowIntensity)) / 100
+
+    // Signal-reactive HUD accent. The whole widget re-tints from this single
+    // binding; a config switch pins a fixed accent instead. The Behavior below
+    // gives every consumer one smooth cross-fade on change.
+    readonly property color accentColor: {
+        if (plasmoid.configuration.fixedAccent)
+            return plasmoid.configuration.fixedAccentColor
+        if (!connected)
+            return Hud.HudStyle.accentIdle
+        var q = (feed && typeof feed.quality_pct === "number") ? feed.quality_pct : null
+        var r = (feed && feed.metrics && typeof feed.metrics.rsrp_dbm === "number")
+                ? feed.metrics.rsrp_dbm : null
+        return Hud.HudStyle.accentFor(q, r)
+    }
+    Behavior on accentColor {
+        enabled: root.animationsEnabled
+        ColorAnimation { duration: Kirigami.Units.longDuration }
+    }
 
     toolTipMainText: i18n("Cell Signal")
     toolTipSubText: {
