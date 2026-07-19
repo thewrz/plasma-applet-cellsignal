@@ -69,7 +69,8 @@ kpackagetool6 -t Plasma/Applet -i package/
 
 ## Configuration
 
-Each panel item and popup detail can be shown or hidden. The poll interval is
+Settings provide individual controls for the panel items, the RSRP, RSRQ, and
+SNR popup bars, and the optional v2 cell details. The poll interval is
 configurable from 1 to 30 seconds, and the history holds 10 to 600 samples. The
 feed command can point at any program that prints a valid contract document.
 
@@ -87,10 +88,11 @@ QT_QPA_PLATFORM=offscreen qml6 tests/qml/check_components.qml
 
 ## Privacy
 
-The contract contains radio measurements only. It has no fields for IMEI,
+The contract contains radio measurements, derived distance and neighbour data,
+an operator name, and limited operational metadata. It has no fields for IMEI,
 ICCID, IMSI, TAC, cell ID, or PCI. The XMM7360 responses contain some of those
-cell identifiers, but the feeder does not include them in parser output or the
-published document.
+cell identifiers, but the feeder excludes them from parser output and the
+published document. The default feed file is readable by local users.
 
 ## License
 

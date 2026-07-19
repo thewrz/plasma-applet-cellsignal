@@ -35,7 +35,7 @@ Each successful connected sample can include:
 | Data | Modem source |
 |---|---|
 | RSRP, RSRQ, SNR, serving EARFCN, and timing advance | `AT+XMCI=1` |
-| Fallback RSRP, RSRQ, and SNR when XMCI omits them | `AT+XCESQ?` |
+| Fallback signal metrics when XMCI omits RSRP | `AT+XCESQ?` |
 | Serving bandwidth and carrier aggregation | `AT+GTCAINFO?` |
 | RRC connected or idle state | `AT+CSCON?` |
 | Registered operator name | `AT+COPS?` |
@@ -51,6 +51,7 @@ result, so most samples do not send `AT+COPS?`.
 Run these commands from `feeders/xmm7360/`:
 
 ```sh
+sudo systemctl stop cellsignal-xmm7360.timer cellsignal-xmm7360.service
 sudo install -Dm755 cellsignal-feeder-xmm7360 /usr/local/bin/cellsignal-feeder-xmm7360
 sudo install -Dm755 xmm7360_decode.py /usr/local/bin/xmm7360_decode.py
 sudo install -Dm644 cellsignal-xmm7360.service /etc/systemd/system/cellsignal-xmm7360.service
@@ -59,8 +60,9 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now cellsignal-xmm7360.timer
 ```
 
-The same commands upgrade an existing installation. Both Python files must be
-updated together.
+The same commands upgrade an existing installation. Stopping the timer and its
+service first prevents a sample from starting between the two Python-file
+installs. Both files must be updated together.
 
 Run one sample immediately and inspect the result:
 
@@ -103,7 +105,9 @@ or adjust its schedule.
 
 ## Privacy
 
-The feeder publishes radio measurements and the operator name. It never
-publishes IMEI, ICCID, IMSI, TAC, cell ID, or PCI. TAC, cell ID, and PCI are
-present in some raw `XMCI` and `GTCAINFO` responses, but the parsers read past
-them and do not return them.
+The feeder publishes radio measurements, derived distance and neighbour data,
+the operator name, and limited operational metadata. It never publishes IMEI,
+ICCID, IMSI, TAC, cell ID, or PCI. TAC, cell ID, and PCI are present in some
+raw `XMCI` and `GTCAINFO` responses, but the parsers read past them and do not
+return them. `/run/cellsignal.json` is mode `0644` so the unprivileged applet
+can read it; other local users can read it too.
