@@ -18,8 +18,14 @@ Item {
     // Inset so content clears the chamfered corners and glow border.
     property real contentPadding: Math.round(chamfer * 0.9)
 
-    implicitWidth: contentHolder.implicitWidth + contentPadding * 2
-    implicitHeight: contentHolder.implicitHeight + contentPadding * 2
+    // A plain Item never aggregates its child's implicit size, so read it from
+    // the wrapped content (a Layout/positioner computes its own implicitWidth/
+    // Height even when anchored fill). Without this the frame would report only
+    // 2×contentPadding and collapse the panel representation to a sliver.
+    implicitWidth: (contentHolder.children.length > 0
+                    ? contentHolder.children[0].implicitWidth : 0) + contentPadding * 2
+    implicitHeight: (contentHolder.children.length > 0
+                     ? contentHolder.children[0].implicitHeight : 0) + contentPadding * 2
 
     Canvas {
         id: bg

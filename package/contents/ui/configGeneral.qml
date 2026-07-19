@@ -66,12 +66,15 @@ Kirigami.FormLayout {
     QQC2.CheckBox { id: showBand; text: i18n("Band (e.g. B12)") }
     QQC2.CheckBox { id: showFrequency; text: i18n("Frequency (MHz)") }
     QQC2.CheckBox { id: showTech; text: i18n("Technology (LTE/5G)") }
+    // RSSI has no Layout-B popup bar; it only appears in the panel hover
+    // tooltip, so its toggle lives with the panel controls (not "Metrics
+    // (popup)"). RSRP/RSRQ/SNR below drive both the popup bars and the tooltip.
+    QQC2.CheckBox { id: showRssi; text: i18n("RSSI (panel tooltip)") }
 
     Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: i18n("Metrics (popup)") }
     QQC2.CheckBox { id: showRsrp; text: "RSRP" }
     QQC2.CheckBox { id: showRsrq; text: "RSRQ" }
     QQC2.CheckBox { id: showSnr; text: "SNR" }
-    QQC2.CheckBox { id: showRssi; text: "RSSI" }
 
     Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: i18n("Cell details (popup)") }
     QQC2.CheckBox { id: showBandwidth; text: i18n("Channel bandwidth") }

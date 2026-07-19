@@ -231,7 +231,7 @@ Item {
                         value: {
                             if (!full.live || feed.aggregation == null) return ""
                             var a = feed.aggregation
-                            var bands = (a.bands && a.bands.length) ? a.bands.join("+") : ""
+                            var bands = (Array.isArray(a.bands) && a.bands.length) ? a.bands.join("+") : ""
                             var mhz = (a.aggregate_mhz != null) ? a.aggregate_mhz + " MHz" : ""
                             return [bands, mhz].filter(function (s) { return s !== "" }).join(" · ")
                         }
