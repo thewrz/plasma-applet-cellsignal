@@ -1,0 +1,2 @@
+singleton HudStyle 1.0 HudStyle.qml
+HudFrame 1.0 HudFrame.qml
