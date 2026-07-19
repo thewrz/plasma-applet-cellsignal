@@ -37,10 +37,10 @@ PlasmoidItem {
     // 0..1 glow strength for HudFrame, from the config percentage.
     readonly property real glowIntensity: Math.max(0, Math.min(100, plasmoid.configuration.glowIntensity)) / 100
 
-    // Signal-reactive HUD accent. The whole widget re-tints from this single
-    // binding; a config switch pins a fixed accent instead. The Behavior below
-    // gives every consumer one smooth cross-fade on change.
-    readonly property color accentColor: {
+    // Signal-reactive HUD accent for the popup. The Behavior needs a writable
+    // target property, so keep the computed color separate from the animated
+    // value consumed by the HUD components.
+    readonly property color targetAccentColor: {
         if (plasmoid.configuration.fixedAccent)
             return plasmoid.configuration.fixedAccentColor
         if (!connected)
@@ -50,6 +50,7 @@ PlasmoidItem {
                 ? feed.metrics.rsrp_dbm : null
         return Hud.HudStyle.accentFor(q, r)
     }
+    property color accentColor: targetAccentColor
     Behavior on accentColor {
         enabled: root.animationsEnabled
         ColorAnimation { duration: Kirigami.Units.longDuration }
