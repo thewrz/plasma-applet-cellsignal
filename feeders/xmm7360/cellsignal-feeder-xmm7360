@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """cellsignal feeder for the Intel XMM7360 (iosm kernel driver).
 
-Publishes Cell Signal contract-v1 JSON (see docs/CONTRACT.md) to /run/cellsignal.json.
-Per tick: query the modem's AT command port for live measurements (AT+XCESQ? for
-RSRP/RSRQ/SINR, AT+XMCI=1 for the serving cell's EARFCN -> band/frequency).
-Never publishes device/subscriber identifiers — metrics only, by contract
-(XMCI's TAC/cell-id/PCI fields are parsed past, never returned).
+Publishes Cell Signal contract-v2 JSON (see docs/CONTRACT.md) to /run/cellsignal.json.
+Per tick it issues four safe AT reads on the command port: AT+XMCI=1 (serving
+trio + EARFCN + Timing-Advance + type-5 neighbours), AT+GTCAINFO? (carrier
+aggregation: component-carrier count, per-carrier band/bandwidth), AT+CSCON?
+(RRC idle/connected) and AT+COPS? (operator name, served from a short-lived
+cache to skip most round-trips). AT+XCESQ? is a fallback for the measurement
+trio only. Never publishes device/subscriber identifiers — measurements only,
+by contract (TAC/cell-id/PCI in the XMCI/GTCAINFO responses are parsed past,
+never returned).
 
 The AT port is a wwan char device, not a tty: plain fd + select with generous
 read windows, replies terminated by OK/ERROR. /dev/wwan0at1 answers commands;
@@ -28,7 +32,11 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from xmm7360_decode import (  # noqa: E402
     band_for_earfcn,
+    distance_m,
     freq_mhz_for_earfcn,
+    parse_cops_operator,
+    parse_cscon,
+    parse_gtcainfo,
     parse_xcesq,
     parse_xmci,
     quality_pct,
@@ -38,6 +46,8 @@ OUT = '/run/cellsignal.json'
 AT_PORT = '/dev/wwan0at1'       # command port; at0 is URC-broadcast only
 AT_LOCK = '/run/lte-at.lock'    # shared with other AT tooling (e.g. lte status)
 IFACE = 'wwan0'
+OP_CACHE = '/run/cellsignal-operator'   # operator name; publishable, not an identifier
+OP_TTL = 300                    # operator changes rarely: re-query AT+COPS? at most every 5 min
 
 
 class Timeout(Exception):
@@ -67,8 +77,16 @@ def with_timeout(secs, fn, *args, **kw):
 def build_contract(decoded, state, now):
     d = decoded or {}
     connected = state == 'connected'
+    carriers = d.get('carriers')
+    aggregation = None
+    if carriers is not None:
+        aggregation = {
+            'carriers': carriers,
+            'bands': d.get('bands') or [],
+            'aggregate_mhz': d.get('aggregate_mhz'),
+        }
     return {
-        'version': 1,
+        'version': 2,
         'ts': now,
         'state': state,
         'tech': 'lte' if connected else None,
@@ -82,10 +100,45 @@ def build_contract(decoded, state, now):
             'band': d.get('band'),
             'earfcn': d.get('earfcn'),
             'freq_mhz': d.get('freq_mhz'),
+            'bandwidth_mhz': d.get('bandwidth_mhz'),
+            'timing_advance': d.get('timing_advance'),
+            'distance_m': d.get('distance_m'),
+            'rrc_state': d.get('rrc_state'),
         },
+        'aggregation': aggregation,
+        'neighbors': d.get('neighbors') or [],
+        'operator': d.get('operator'),
         'quality_pct': d.get('quality_pct'),
         'source': 'xmm7360',
     }
+
+
+def read_operator_cache():
+    """Return the cached operator name if fresh, else None. The operator
+    changes rarely, so a cache spares an AT+COPS? round-trip most ticks."""
+    try:
+        if time.time() - os.stat(OP_CACHE).st_mtime > OP_TTL:
+            return None
+        with open(OP_CACHE) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def write_operator_cache(name):
+    """Persist the operator name atomically. Best-effort: cache-write failures
+    never abort a publish."""
+    if not name:
+        return
+    try:
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(OP_CACHE), prefix='.cellsignal-op.')
+        with os.fdopen(fd, 'w') as f:
+            f.write(name + '\n')
+            os.fchmod(f.fileno(), 0o644)
+        os.replace(tmp, OP_CACHE)
+    except OSError:
+        with contextlib.suppress(OSError, NameError):
+            os.unlink(tmp)
 
 
 def iface_up():
@@ -127,8 +180,13 @@ def at_chat(fd, cmd, secs=3.0, debug=False):
 
 
 def query_modem(debug=False):
-    """One AT session: {rsrp_dbm, rsrq_db, snr_db, band, earfcn, freq_mhz,
-    quality_pct} — measurement fields may be None per the parsers."""
+    """One AT session producing the full v2 decode: serving measurements +
+    band/frequency/quality, Timing-Advance distance, carrier aggregation, RRC
+    state, neighbours and operator. Any field may be None per the parsers.
+    All four reads (XMCI/GTCAINFO/CSCON/COPS) were validated non-wedging in the
+    #15 drills. Operator is served from a short-lived cache to skip most COPS
+    round-trips."""
+    operator = read_operator_cache()
     fd = with_timeout(5, os.open, AT_PORT, os.O_RDWR | os.O_NONBLOCK)
     try:
         at_read(fd, 0.4, stop_on_term=False)        # drain stale URC noise
@@ -145,14 +203,26 @@ def query_modem(debug=False):
             for k, v in fallback.items():
                 if xmci.get(k) is None and v is not None:
                     xmci[k] = v
+        gtca = parse_gtcainfo(at_chat(fd, 'AT+GTCAINFO?', secs=3.0, debug=debug))
+        rrc = parse_cscon(at_chat(fd, 'AT+CSCON?', secs=2.0, debug=debug))
+        if operator is None:
+            operator = parse_cops_operator(at_chat(fd, 'AT+COPS?', secs=3.0, debug=debug))
     finally:
         with contextlib.suppress(OSError):
             os.close(fd)
+    write_operator_cache(operator)
     out = dict(xmci)
     earfcn = out['earfcn']
     out['band'] = band_for_earfcn(earfcn) if earfcn else None
     out['freq_mhz'] = freq_mhz_for_earfcn(earfcn) if earfcn else None
     out['quality_pct'] = quality_pct(out['rsrp_dbm']) if out['rsrp_dbm'] is not None else None
+    out['distance_m'] = distance_m(out.get('timing_advance'))
+    out['carriers'] = gtca['carriers']
+    out['bands'] = gtca['bands']
+    out['aggregate_mhz'] = gtca['aggregate_mhz']
+    out['bandwidth_mhz'] = gtca['serving_bandwidth_mhz']
+    out['rrc_state'] = rrc
+    out['operator'] = operator
     return out
 
 

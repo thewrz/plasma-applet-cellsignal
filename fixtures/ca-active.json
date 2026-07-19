@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "ts": 1789000000,
+  "state": "connected",
+  "tech": "lte",
+  "metrics": { "rsrp_dbm": -88.0, "rsrq_db": -9.0, "snr_db": 13.0, "rssi_dbm": null },
+  "cell": {
+    "band": "B12", "earfcn": 5110, "freq_mhz": 700,
+    "bandwidth_mhz": 10, "timing_advance": 12, "distance_m": 938,
+    "rrc_state": "connected"
+  },
+  "aggregation": { "carriers": 2, "bands": ["B12", "B2"], "aggregate_mhz": 30 },
+  "neighbors": [
+    { "band": "B2", "earfcn": 700, "rsrp_dbm": -105.0, "rsrq_db": -15.0 }
+  ],
+  "operator": "MOBILE",
+  "quality_pct": 80,
+  "source": "fixture"
+}
