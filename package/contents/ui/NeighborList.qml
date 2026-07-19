@@ -12,7 +12,8 @@ ColumnLayout {
     property var neighbors: []
     property color accent: Hud.HudStyle.accentGood
 
-    readonly property int count: (neighbors && neighbors.length) ? neighbors.length : 0
+    readonly property var safeNeighbors: Array.isArray(neighbors) ? neighbors : []
+    readonly property int count: safeNeighbors.length
 
     spacing: Kirigami.Units.smallSpacing
 
@@ -21,7 +22,7 @@ ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
         Repeater {
-            model: neighborList.neighbors
+            model: neighborList.safeNeighbors
 
             Rectangle {
                 id: chip

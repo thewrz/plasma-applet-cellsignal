@@ -26,10 +26,20 @@ Item {
                 width: 300
                 neighbors: [{ band: "B2", earfcn: 700, rsrp_dbm: -105, rsrq_db: -15 }]
             }
+            UI.NeighborList {
+                id: invalidNeighbors
+                width: 300
+                neighbors: "not-an-array"
+            }
         }
     }
 
     Component.onCompleted: {
+        if (invalidNeighbors.count !== 0) {
+            console.log("FAIL: non-array neighbours must be ignored")
+            Qt.exit(1)
+            return
+        }
         console.log("COMPONENTS_OK")
         Qt.exit(0)
     }
