@@ -6,9 +6,9 @@ know how each modem exposes its measurements.
 
 ## Current status
 
-The current tree is version 0.2.0. [PR #21](https://github.com/thewrz/plasma-applet-cellsignal/pull/21)
+The current tree is version 0.2.1. [PR #21](https://github.com/thewrz/plasma-applet-cellsignal/pull/21)
 added feed contract v2 and the expanded XMM7360 feeder. [PR #22](https://github.com/thewrz/plasma-applet-cellsignal/pull/22)
-added the compact HUD and two-column popup.
+added the two-column cyberpunk detail popup.
 
 The applet accepts both v1 and v2 feed documents. Core signal data still works
 with a v1 feeder. The extra cell details appear only when a v2 feeder supplies
@@ -21,11 +21,11 @@ carrier-aggregation data.
 
 ## Display
 
-The compact panel view can show:
+The compact panel remains theme-aware and can show:
 
 - signal bars and a scrolling RSRP, RSRQ, or SNR history
 - LTE band, frequency, and radio technology
-- a signal-reactive accent, or a fixed accent selected in settings
+- Plasma semantic colors for strong, fair, and weak signal levels
 
 The popup adds:
 
@@ -35,9 +35,9 @@ The popup adds:
   distance to the serving tower
 - clear no-feed, stale, disconnected, and error states
 
-The interface uses an always-dark HUD palette. Quality controls the accent when
+The popup uses an always-dark HUD palette. Quality controls its accent when
 available, with RSRP as the fallback. Plasma's reduced-animation setting also
-disables the widget's motion.
+disables the popup's motion.
 
 ## Feeders
 
@@ -67,6 +67,13 @@ To install a copy instead of a development symlink:
 kpackagetool6 -t Plasma/Applet -i package/
 ```
 
+Use `-u` instead of `-i` for an existing installation. Reload Plasma after an
+install or upgrade so the running widget picks up the new QML:
+
+```sh
+systemctl --user restart plasma-plasmashell.service
+```
+
 ## Configuration
 
 Settings provide individual controls for the panel items, the RSRP, RSRQ, and
@@ -74,8 +81,8 @@ SNR popup bars, and the optional v2 cell details. The poll interval is
 configurable from 1 to 30 seconds, and the history holds 10 to 600 samples. The
 feed command can point at any program that prints a valid contract document.
 
-Glow strength and accent mode are also configurable. Fixed accent choices are
-cyan-green, amber, magenta, ice blue, and lime.
+Popup glow strength and accent mode are also configurable. Fixed popup accent
+choices are cyan-green, amber, magenta, ice blue, and lime.
 
 ## Development checks
 
@@ -84,6 +91,8 @@ python3 -m pytest tests/ -q
 qmllint package/contents/ui/*.qml package/contents/ui/hud/*.qml
 QT_QPA_PLATFORM=offscreen qml6 tests/qml/check_hudstyle.qml
 QT_QPA_PLATFORM=offscreen qml6 tests/qml/check_components.qml
+QT_QPA_PLATFORM=offscreen qml6 tests/qml/check_panel.qml
+QT_QPA_PLATFORM=offscreen qml6 tests/qml/check_main.qml
 ```
 
 ## Privacy

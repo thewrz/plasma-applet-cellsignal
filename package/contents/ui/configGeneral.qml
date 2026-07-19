@@ -102,10 +102,10 @@ Kirigami.FormLayout {
         from: 10; to: 600
     }
 
-    Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: i18n("HUD appearance") }
+    Item { Kirigami.FormData.isSection: true; Kirigami.FormData.label: i18n("Popup appearance") }
     QQC2.CheckBox {
         id: fixedAccent
-        text: i18n("Fixed accent colour (ignore signal quality)")
+        text: i18n("Fixed popup accent colour (ignore signal quality)")
     }
     QQC2.ComboBox {
         id: fixedAccentColor
@@ -124,7 +124,7 @@ Kirigami.FormLayout {
     }
     QQC2.SpinBox {
         id: glowIntensity
-        Kirigami.FormData.label: i18n("Glow intensity (%):")
+        Kirigami.FormData.label: i18n("Popup glow intensity (%):")
         from: 0; to: 100; stepSize: 10
     }
 }

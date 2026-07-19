@@ -19,6 +19,7 @@ Item {
             UI.MetricBar { width: 300; label: "QUAL"; unit: "%"; value: null; rangeLo: 0; rangeHi: 100 }
             UI.KvRow { width: 300; key: "Band"; value: "B12" }
             UI.Bars { width: 60; height: 30; rsrp: -95 }
+            UI.PanelSparkline { width: 120; height: 40; samples: [-96, -95, -94, -95] }
             UI.Sparkline { width: 120; height: 40; samples: [-96, -95, -94, -95] }
             UI.TowerModule { distanceM: 2188 }
             UI.TowerModule { distanceM: null }

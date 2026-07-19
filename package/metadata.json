@@ -3,12 +3,12 @@
     "KPlugin": {
         "Authors": [{ "Email": "wrz@wrzdj.com", "Name": "Adam (thewrz)" }],
         "Category": "System Information",
-        "Description": "Cyberpunk HUD for cellular signal: bars, sparkline, RSRP/RSRQ/SNR/quality, band, frequency, channel bandwidth, carrier aggregation, neighbour cells and distance to tower. Modem-agnostic via a simple JSON feed.",
+        "Description": "Theme-aware cellular signal panel with a cyberpunk detail popup for signal quality, cell data, carrier aggregation, neighbour cells and tower distance. Modem-agnostic via a simple JSON feed.",
         "Icon": "network-mobile-80",
         "Id": "com.github.thewrz.cellsignal",
         "License": "MIT",
         "Name": "Cell Signal",
-        "Version": "0.2.0",
+        "Version": "0.2.1",
         "Website": "https://github.com/thewrz/plasma-applet-cellsignal"
     },
     "X-Plasma-API-Minimum-Version": "6.0"

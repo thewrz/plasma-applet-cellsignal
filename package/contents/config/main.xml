@@ -23,7 +23,7 @@
     <entry name="showNeighbors" type="Bool"><default>true</default></entry>
     <entry name="showDistance" type="Bool"><default>true</default></entry>
     <entry name="showRrc" type="Bool"><default>true</default></entry>
-    <!-- HUD appearance -->
+    <!-- Popup appearance -->
     <entry name="glowIntensity" type="Int"><default>60</default></entry>
     <entry name="fixedAccent" type="Bool"><default>false</default></entry>
     <entry name="fixedAccentColor" type="String"><default>#29e7cd</default></entry>
