@@ -54,6 +54,7 @@ Run these commands from `feeders/xmm7360/`:
 sudo systemctl stop cellsignal-xmm7360.timer cellsignal-xmm7360.service
 sudo install -Dm755 cellsignal-feeder-xmm7360 /usr/local/bin/cellsignal-feeder-xmm7360
 sudo install -Dm755 xmm7360_decode.py /usr/local/bin/xmm7360_decode.py
+sudo install -Dm644 ../shared/cellsignal_bands.py /usr/local/bin/cellsignal_bands.py
 sudo install -Dm644 cellsignal-xmm7360.service /etc/systemd/system/cellsignal-xmm7360.service
 sudo install -Dm644 cellsignal-xmm7360.timer /etc/systemd/system/cellsignal-xmm7360.timer
 sudo systemctl daemon-reload
@@ -61,8 +62,9 @@ sudo systemctl enable --now cellsignal-xmm7360.timer
 ```
 
 The same commands upgrade an existing installation. Stopping the timer and its
-service first prevents a sample from starting between the two Python-file
-installs. Both files must be updated together.
+service first prevents a sample from starting between the Python-file installs.
+`xmm7360_decode.py` imports the shared band table from `cellsignal_bands.py`, so
+all three Python files must be installed together and kept in sync.
 
 Run one sample immediately and inspect the result:
 
