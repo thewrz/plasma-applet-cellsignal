@@ -125,6 +125,103 @@ def test_connected_without_measurement_is_error(monkeypatch):
     assert all(v is None for v in doc['metrics'].values())
 
 
+def test_connected_gsm_publishes_rssi_without_rsrp(monkeypatch):
+    fixture = {
+        'list': {'modem-list': ['/org/freedesktop/ModemManager1/Modem/0']},
+        'info': {'modem': {
+            'generic': {'state': 'connected', 'access-technologies': ['gsm']},
+            '3gpp': {'operator-name': 'MOBILE'},
+        }},
+        'signal': {'modem': {'signal': {'gsm': {'rssi': '-73'}}}},
+        'cellinfo': None,
+    }
+    m = load_feeder()
+    monkeypatch.setattr(m, 'run_json', make_run_json(fixture))
+    monkeypatch.setattr(m, 'enable_signal_polling', lambda *_a, **_k: None)
+
+    doc, keep = m.read_state()
+
+    assert keep is False and doc['state'] == 'connected' and doc['tech'] == 'gsm'
+    assert doc['metrics']['rssi_dbm'] == -73.0
+    assert doc['metrics']['rsrp_dbm'] is None and doc['quality_pct'] is None
+
+
+def test_connected_modem_is_selected_from_multiple_devices(monkeypatch):
+    m = load_feeder()
+
+    def fake(args, debug=False):
+        if args == ['-L']:
+            return {'modem-list': ['/org/freedesktop/ModemManager1/Modem/0',
+                                   '/org/freedesktop/ModemManager1/Modem/1']}
+        if args == ['-m', '0']:
+            return {'modem': {'generic': {'state': 'registered'}}}
+        if args == ['-m', '1']:
+            return {'modem': {
+                'generic': {'state': 'connected', 'access-technologies': ['lte']},
+                '3gpp': {'operator-name': 'MOBILE'},
+            }}
+        if args == ['-m', '1', '--signal-get']:
+            return {'modem': {'signal': {'lte': {'rsrp': '-91'}}}}
+        if args == ['-m', '1', '--get-cell-info']:
+            return {'modem': {'cell-info': []}}
+        return None
+
+    monkeypatch.setattr(m, 'run_json', fake)
+    doc, keep = m.read_state()
+
+    assert keep is False and doc['state'] == 'connected'
+    assert doc['metrics']['rsrp_dbm'] == -91.0
+
+
+def test_failed_modem_info_query_keeps_last_document(monkeypatch):
+    m = load_feeder()
+    monkeypatch.setattr(
+        m, 'run_json',
+        lambda args, debug=False: (
+            {'modem-list': ['/org/freedesktop/ModemManager1/Modem/0']}
+            if args == ['-L'] else None))
+
+    doc, keep = m.read_state()
+
+    assert keep is True and doc is None
+
+
+def test_timestamp_is_captured_after_measurement_queries(monkeypatch):
+    m = load_feeder()
+    fixture = load('lte-connected')
+    clock = {'now': 100}
+    original_fake = make_run_json(fixture)
+
+    def advancing_fake(args, debug=False):
+        clock['now'] += 4
+        return original_fake(args, debug)
+
+    monkeypatch.setattr(m, 'run_json', advancing_fake)
+    monkeypatch.setattr(m.time, 'time', lambda: clock['now'])
+
+    doc, _keep = m.read_state()
+
+    assert doc['ts'] == 116
+
+
+def test_earfcn_zero_is_passed_to_band_derivation(monkeypatch):
+    m = load_feeder()
+
+    def fake(args, debug=False):
+        if '--signal-get' in args:
+            return {'modem': {'signal': {'lte': {'rsrp': '-90'}}}}
+        return {'modem': {'cell-info': [
+            {'cell-type': 'lte', 'serving': 'yes', 'earfcn': 0}]}}
+
+    monkeypatch.setattr(m, 'run_json', fake)
+    monkeypatch.setattr(m, 'band_for_earfcn', lambda earfcn: f'B{earfcn}')
+    monkeypatch.setattr(m, 'freq_mhz_for_earfcn', lambda earfcn: earfcn)
+
+    decoded = m.query_modem(0, 'lte', False)
+
+    assert decoded['band'] == 'B0' and decoded['freq_mhz'] == 0
+
+
 def test_contract_key_sets_pinned(monkeypatch):
     # Privacy guard: pin the published key sets so no identifier can slip in as
     # an extra key.

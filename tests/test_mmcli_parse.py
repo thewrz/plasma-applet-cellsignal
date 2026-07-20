@@ -71,6 +71,18 @@ def test_parse_modem_info_operator_placeholder_is_null():
     assert parse_modem_info(doc)['operator'] is None
 
 
+def test_parse_modem_info_normalizes_placeholders_and_numeric_plmn():
+    padded = {'modem': {'3gpp': {'operator-name': ' MOBILE '},
+                        'generic': {'state': ' -- ', 'access-technologies': ['lte']}}}
+    numeric = {'modem': {'3gpp': {'operator-name': '310410'},
+                         'generic': {'state': ' connected ',
+                                     'access-technologies': ['lte']}}}
+    assert parse_modem_info(padded) == {
+        'state': None, 'tech': 'lte', 'operator': 'MOBILE'}
+    assert parse_modem_info(numeric) == {
+        'state': 'connected', 'tech': 'lte', 'operator': None}
+
+
 def test_parse_signal_lte():
     assert parse_signal(LTE['signal'], 'lte') == {
         'rsrp_dbm': -98.0, 'rsrq_db': -11.0, 'snr_db': 8.0, 'rssi_dbm': -65.0}
@@ -88,12 +100,37 @@ def test_parse_signal_falls_back_across_techs():
     assert m['rsrp_dbm'] == -98.0
 
 
+def test_parse_signal_prefers_active_gsm_rssi_over_stale_lte_rsrp():
+    doc = {'modem': {'signal': {
+        'gsm': {'rssi': '-73'},
+        'lte': {'rsrp': '-110'},
+    }}}
+    assert parse_signal(doc, 'gsm') == {
+        'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None, 'rssi_dbm': -73.0}
+
+
 def test_parse_signal_all_unknown():
     doc = {'modem': {'signal': {'lte': {'rsrp': '--', 'rsrq': '--',
                                         'rssi': '--', 'snr': '--'}}}}
     assert parse_signal(doc, 'lte') == {
         'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None, 'rssi_dbm': None}
     assert parse_signal(None, 'lte')['rsrp_dbm'] is None
+
+
+def test_parsers_treat_unexpected_json_shapes_as_unknown():
+    empty_info = {'state': None, 'tech': None, 'operator': None}
+    empty_signal = {
+        'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None, 'rssi_dbm': None}
+    empty_cell = {'earfcn': None, 'neighbors': []}
+
+    assert modem_indexes([]) == []
+    assert modem_indexes({'modem-list': {}}) == []
+    assert parse_modem_info({'modem': []}) == empty_info
+    assert parse_modem_info({'modem': {'generic': [], '3gpp': []}}) == empty_info
+    assert parse_signal({'modem': None}, 'lte') == empty_signal
+    assert parse_signal({'modem': {'signal': []}}, 'lte') == empty_signal
+    assert parse_cell_info({'modem': []}) == empty_cell
+    assert parse_cell_info({'modem': {'cell-info': {}}}) == empty_cell
 
 
 def test_parse_cell_info_serving_and_neighbor():

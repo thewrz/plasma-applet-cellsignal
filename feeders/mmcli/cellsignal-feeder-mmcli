@@ -33,13 +33,15 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_SCRIPT_DIR, os.path.join(_SCRIPT_DIR, '..', 'shared')]
 from cellsignal_bands import (  # noqa: E402
     band_for_earfcn,
     freq_mhz_for_earfcn,
     quality_pct,
 )
 from mmcli_parse import (  # noqa: E402
+    has_signal_measurement,
     modem_indexes,
     parse_cell_info,
     parse_modem_info,
@@ -100,7 +102,7 @@ def query_modem(idx, tech, debug):
     Enables signal polling and re-reads once when the first sample is empty
     (polling not yet running), never fabricating a value."""
     sig = parse_signal(run_json(['-m', str(idx), '--signal-get'], debug), tech)
-    if sig['rsrp_dbm'] is None:
+    if not has_signal_measurement(sig):
         enable_signal_polling(idx, debug)
         sig = parse_signal(run_json(['-m', str(idx), '--signal-get'], debug), tech)
     cell = parse_cell_info(run_json(['-m', str(idx), '--get-cell-info'], debug))
@@ -112,8 +114,8 @@ def query_modem(idx, tech, debug):
         'snr_db': sig['snr_db'],
         'rssi_dbm': sig['rssi_dbm'],
         'earfcn': earfcn,
-        'band': band_for_earfcn(earfcn) if earfcn else None,
-        'freq_mhz': freq_mhz_for_earfcn(earfcn) if earfcn else None,
+        'band': band_for_earfcn(earfcn) if earfcn is not None else None,
+        'freq_mhz': freq_mhz_for_earfcn(earfcn) if earfcn is not None else None,
         'quality_pct': quality_pct(rsrp) if rsrp is not None else None,
         'neighbors': cell['neighbors'],
         'tech': tech,
@@ -152,33 +154,54 @@ def build_contract(decoded, state, now):
     }
 
 
+def build_current_contract(decoded, state):
+    """Build a contract stamped after its measurement queries complete."""
+    return build_contract(decoded, state, int(time.time()))
+
+
+def find_connected_modem(idxs, debug):
+    """Return the first connected modem and whether any info query failed."""
+    query_failed = False
+    for idx in idxs:
+        info_doc = run_json(['-m', str(idx)], debug)
+        if info_doc is None:
+            query_failed = True
+            continue
+        modem_info = parse_modem_info(info_doc)
+        if modem_info['state'] == 'connected':
+            return idx, modem_info, query_failed
+        if modem_info['state'] is None:
+            query_failed = True
+    return None, None, query_failed
+
+
 def read_state(debug=False):
     """Return ``(contract_doc | None, keep_last)``.
 
-    ``keep_last`` is True only when ModemManager itself is unreachable (mmcli -L
-    failed): a transient blip must not flap the feed to no-modem, so the last
-    document is left in place. ts is stamped at publication time.
+    ``keep_last`` is True when ModemManager is unreachable or modem state cannot
+    be determined reliably: a transient blip must not overwrite the last sample.
+    The timestamp is captured after all measurement queries complete.
     """
-    now = int(time.time())
     list_doc = run_json(['-L'], debug)
     if list_doc is None:
         return None, True                       # ModemManager unreachable: keep last
     idxs = modem_indexes(list_doc)
     if not idxs:
-        return build_contract(None, 'no-modem', now), False
+        return build_current_contract(None, 'no-modem'), False
 
-    idx = idxs[0]
-    mi = parse_modem_info(run_json(['-m', str(idx)], debug))
-    if mi['state'] != 'connected':
-        return build_contract(None, 'disconnected', now), False
+    idx, modem_info, query_failed = find_connected_modem(idxs, debug)
+    if idx is None:
+        if query_failed:
+            return None, True
+        return build_current_contract(None, 'disconnected'), False
 
-    decoded = query_modem(idx, mi['tech'], debug)
-    decoded['operator'] = mi['operator']
-    if decoded['rsrp_dbm'] is None:
+    decoded = query_modem(idx, modem_info['tech'], debug)
+    decoded['operator'] = modem_info['operator']
+    if not has_signal_measurement(decoded):
         # Connected but no usable measurement (mid-attach, polling not warmed):
         # report error rather than fabricate a value.
-        return build_contract(None, 'error', now), False
-    return build_contract(decoded, 'connected', now), False
+        return build_current_contract(None, 'error'), False
+    return build_current_contract(decoded, 'connected'), False
 
 
 def write_atomic(text):

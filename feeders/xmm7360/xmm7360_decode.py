@@ -29,7 +29,8 @@ import sys
 # are shared across feeders; import them from the shared module installed
 # alongside this file. Re-exported here so existing callers keep importing them
 # from xmm7360_decode unchanged.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_SCRIPT_DIR, os.path.join(_SCRIPT_DIR, '..', 'shared')]
 from cellsignal_bands import (  # noqa: E402,F401
     BAND_RANGES,
     band_for_earfcn,

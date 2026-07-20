@@ -18,7 +18,8 @@ identifier fields are never read into the result. See docs/CONTRACT.md.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_SCRIPT_DIR, os.path.join(_SCRIPT_DIR, '..', 'shared')]
 from cellsignal_bands import band_for_earfcn  # noqa: E402
 
 # mmcli access-technology token -> (contract tech, signal-dict key), best first.
@@ -39,8 +40,13 @@ _TECH_TABLE = [
 # contract tech -> signal sub-dict key, for reading the per-technology metrics.
 _SIGNAL_KEY = {'nr5g': '5g', 'lte': 'lte', 'umts': 'umts', 'gsm': 'gsm'}
 
-# Fallback scan order when the active tech's dict carries no usable RSRP.
+# Fallback scan order when the active tech's dict carries no usable metric.
 _SIGNAL_SCAN = ['lte', '5g', 'umts', 'gsm']
+
+
+def _dict(value):
+    """Return a mapping value or an empty mapping for malformed JSON shapes."""
+    return value if isinstance(value, dict) else {}
 
 
 def _num(value):
@@ -71,8 +77,11 @@ def modem_indexes(list_doc):
     is the index mmcli accepts as ``-m <i>``. Unparseable entries are skipped;
     an absent or empty list yields ``[]`` (the no-modem case).
     """
+    paths = _dict(list_doc).get('modem-list')
+    if not isinstance(paths, list):
+        return []
     out = []
-    for path in (list_doc or {}).get('modem-list') or []:
+    for path in paths:
         tail = str(path).rstrip('/').rsplit('/', 1)[-1]
         if tail.isdigit():
             out.append(int(tail))
@@ -82,7 +91,9 @@ def modem_indexes(list_doc):
 def best_tech(access_technologies):
     """Return ``(contract_tech, signal_key)`` for a list of mmcli access-tech
     tokens, choosing the highest-generation one present, or ``(None, None)``."""
-    tokens = {str(t).strip().lower() for t in (access_technologies or [])}
+    if not isinstance(access_technologies, list):
+        return None, None
+    tokens = {str(t).strip().lower() for t in access_technologies}
     for token, tech, key in _TECH_TABLE:
         if token in tokens:
             return tech, key
@@ -97,19 +108,21 @@ def parse_modem_info(info_doc):
     ``tech`` is the contract technology label for the current access tech.
     ``operator`` is the registered network name, or ``None`` when absent.
     """
-    modem = (info_doc or {}).get('modem') or {}
-    generic = modem.get('generic') or {}
-    threegpp = modem.get('3gpp') or {}
+    modem = _dict(_dict(info_doc).get('modem'))
+    generic = _dict(modem.get('generic'))
+    threegpp = _dict(modem.get('3gpp'))
 
     state = generic.get('state')
-    state = state.strip() if isinstance(state, str) and state.strip() not in ('', '--') else state
-    if not isinstance(state, str) or state in ('', '--'):
+    if not isinstance(state, str) or state.strip() in ('', '--'):
         state = None
+    else:
+        state = state.strip()
 
     tech, _key = best_tech(generic.get('access-technologies'))
 
     operator = threegpp.get('operator-name')
-    if not isinstance(operator, str) or operator.strip() in ('', '--'):
+    if (not isinstance(operator, str) or
+            operator.strip() in ('', '--') or operator.strip().isdigit()):
         operator = None
     else:
         operator = operator.strip()
@@ -118,7 +131,7 @@ def parse_modem_info(info_doc):
 
 
 def _read_signal_dict(signal, key):
-    d = signal.get(key) or {}
+    d = _dict(_dict(signal).get(key))
     return {
         'rsrp_dbm': _num(d.get('rsrp')),
         'rsrq_db': _num(d.get('rsrq')),
@@ -127,24 +140,31 @@ def _read_signal_dict(signal, key):
     }
 
 
+def has_signal_measurement(metrics):
+    """Return whether any contract signal metric has a usable value."""
+    keys = ('rsrp_dbm', 'rsrq_db', 'snr_db', 'rssi_dbm')
+    return any(metrics.get(key) is not None for key in keys)
+
+
 def parse_signal(signal_doc, tech):
     """Extract ``{rsrp_dbm, rsrq_db, snr_db, rssi_dbm}`` from ``--signal-get``.
 
-    Reads the sub-dict for ``tech`` first; if that dict has no RSRP (modem not
-    yet polled on that tech, or tech unknown) it scans the other technology
-    dicts for the first one carrying a usable RSRP. All-unknown yields all None.
+    Reads the sub-dict for ``tech`` first; if that dict has no usable metric
+    (modem not yet polled on that tech, or tech unknown), it scans the other
+    technology dicts. All-unknown yields all None.
     """
-    signal = (signal_doc or {}).get('modem', {}).get('signal') or {}
+    modem = _dict(_dict(signal_doc).get('modem'))
+    signal = _dict(modem.get('signal'))
     key = _SIGNAL_KEY.get(tech)
     if key is not None:
         out = _read_signal_dict(signal, key)
-        if out['rsrp_dbm'] is not None:
+        if has_signal_measurement(out):
             return out
     for scan_key in _SIGNAL_SCAN:
         out = _read_signal_dict(signal, scan_key)
-        if out['rsrp_dbm'] is not None:
+        if has_signal_measurement(out):
             return out
-    # Nothing had an RSRP; still surface the active tech's other fields if any.
+    # No technology had a usable metric; return the active shape with nulls.
     return _read_signal_dict(signal, key) if key is not None else {
         'rsrp_dbm': None, 'rsrq_db': None, 'snr_db': None, 'rssi_dbm': None,
     }
@@ -161,7 +181,11 @@ def parse_cell_info(cell_doc):
     neighbors: []}``.
     """
     out = {'earfcn': None, 'neighbors': []}
-    for cell in (cell_doc or {}).get('modem', {}).get('cell-info') or []:
+    modem = _dict(_dict(cell_doc).get('modem'))
+    cells = modem.get('cell-info')
+    if not isinstance(cells, list):
+        return out
+    for cell in cells:
         if not isinstance(cell, dict):
             continue
         if str(cell.get('cell-type', '')).strip().lower() != 'lte':

@@ -141,11 +141,12 @@ intentionally omitted from the published feed.
 
 ## Runtime behavior
 
-If ModemManager reports no modem, the feeder publishes `no-modem`. A modem that
-is present but not `connected` publishes `disconnected`. A connected modem with
-no usable RSRP yet (mid-attach, or signal polling not warmed up) publishes
-`error` rather than a fabricated value. If ModemManager itself is unreachable
-(`mmcli -L` fails), the feeder leaves the last document in place rather than
+If ModemManager reports no modem, the feeder publishes `no-modem`. When several
+modems are present, it uses the first connected one. If none are connected, it
+publishes `disconnected`. A connected modem with no usable signal measurement
+yet (mid-attach, or signal polling not warmed up) publishes `error` rather than
+a fabricated value. If ModemManager is unreachable or modem state cannot be
+determined reliably, the feeder leaves the last document in place rather than
 flapping the feed.
 
 Writes use a temporary file and atomic rename, so the widget never reads a
