@@ -1,0 +1,30 @@
+{
+  "_note": "LTE connected, but GetCellInfo is unavailable (ModemManager < 1.20 or a modem/driver without cell-info support): the mmcli call fails, modelled here as a null document. Metrics still publish; band/frequency/earfcn resolve to null.",
+  "list": {
+    "modem-list": ["/org/freedesktop/ModemManager1/Modem/0"]
+  },
+  "info": {
+    "modem": {
+      "3gpp": {
+        "operator-code": "310410",
+        "operator-name": "MOBILE",
+        "registration-state": "home"
+      },
+      "generic": {
+        "access-technologies": ["lte"],
+        "equipment-identifier": "990000862471854",
+        "signal-quality": { "recent": "yes", "value": "55" },
+        "state": "connected"
+      }
+    }
+  },
+  "signal": {
+    "modem": {
+      "signal": {
+        "lte": { "error-rate": "--", "rsrp": "-105.00", "rsrq": "-14.00", "rssi": "-72.00", "snr": "4.00" },
+        "refresh": { "rate": "5" }
+      }
+    }
+  },
+  "cellinfo": null
+}

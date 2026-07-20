@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish ModemManager cellular metrics to the Cell Signal feed
+Documentation=https://github.com/thewrz/plasma-applet-cellsignal
+# ModemManager talks over the system bus; wait for it when present.
+After=dbus.socket
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cellsignal-feeder-mmcli --write
+# Runs as the logged-in user (systemctl --user); no elevated privilege needed.
+# Confine it anyway: read-only filesystem except the user runtime dir it writes.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=%t
+ProtectHome=read-only
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+SystemCallFilter=@system-service
+UMask=0022

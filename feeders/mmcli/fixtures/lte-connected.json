@@ -1,0 +1,43 @@
+{
+  "_note": "Captured-shape mmcli --output-json for one LTE-connected modem. Identifiers (equipment-identifier, operator-id, tac, ci, physical-ci) are SYNTHETIC; the feeder parses past them.",
+  "list": {
+    "modem-list": ["/org/freedesktop/ModemManager1/Modem/0"]
+  },
+  "info": {
+    "modem": {
+      "3gpp": {
+        "operator-code": "310410",
+        "operator-name": "MOBILE",
+        "registration-state": "home"
+      },
+      "generic": {
+        "access-technologies": ["lte"],
+        "equipment-identifier": "990000862471854",
+        "signal-quality": { "recent": "yes", "value": "71" },
+        "state": "connected"
+      }
+    }
+  },
+  "signal": {
+    "modem": {
+      "signal": {
+        "5g": { "error-rate": "--", "rsrp": "--", "rsrq": "--", "snr": "--" },
+        "cdma1x": { "ecio": "--", "error-rate": "--", "rssi": "--" },
+        "evdo": { "ecio": "--", "error-rate": "--", "io": "--", "rssi": "--", "sinr": "--" },
+        "gsm": { "error-rate": "--", "rssi": "--" },
+        "lte": { "error-rate": "--", "rsrp": "-98.00", "rsrq": "-11.00", "rssi": "-65.00", "snr": "8.00" },
+        "refresh": { "rate": "5" },
+        "threshold": { "error-rate": "no", "rssi": "0" },
+        "umts": { "ecio": "--", "error-rate": "--", "rscp": "--", "rssi": "--" }
+      }
+    }
+  },
+  "cellinfo": {
+    "modem": {
+      "cell-info": [
+        { "cell-type": "lte", "serving": "yes", "operator-id": "310410", "tac": "1A2B", "ci": "0ABCDEF0", "physical-ci": "123", "earfcn": "5110", "rsrp": "-98.0", "rsrq": "-11.0", "rssi": "-65.0", "timing-advance": "1" },
+        { "cell-type": "lte", "serving": "no", "operator-id": "310410", "tac": "1A2B", "ci": "--", "physical-ci": "456", "earfcn": "700", "rsrp": "-112.0", "rsrq": "-16.0" }
+      ]
+    }
+  }
+}
