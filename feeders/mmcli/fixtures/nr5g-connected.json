@@ -1,0 +1,38 @@
+{
+  "_note": "Captured-shape mmcli --output-json for a 5G NR-connected modem. The serving cell is 5gnr (nrarfcn, no LTE earfcn), so band/frequency resolve to null. Identifiers are SYNTHETIC.",
+  "list": {
+    "modem-list": ["/org/freedesktop/ModemManager1/Modem/0"]
+  },
+  "info": {
+    "modem": {
+      "3gpp": {
+        "operator-code": "310410",
+        "operator-name": "MOBILE",
+        "registration-state": "home"
+      },
+      "generic": {
+        "access-technologies": ["5gnr"],
+        "equipment-identifier": "990000862471854",
+        "signal-quality": { "recent": "yes", "value": "80" },
+        "state": "connected"
+      }
+    }
+  },
+  "signal": {
+    "modem": {
+      "signal": {
+        "5g": { "error-rate": "--", "rsrp": "-90.00", "rsrq": "-10.00", "snr": "20.00" },
+        "lte": { "error-rate": "--", "rsrp": "--", "rsrq": "--", "rssi": "--", "snr": "--" },
+        "refresh": { "rate": "5" },
+        "threshold": { "error-rate": "no", "rssi": "0" }
+      }
+    }
+  },
+  "cellinfo": {
+    "modem": {
+      "cell-info": [
+        { "cell-type": "5gnr", "serving": "yes", "operator-id": "310410", "tac": "00A1", "ci": "1234567890", "physical-ci": "321", "nci": "12345678901", "nrarfcn": "372750", "rsrp": "-90.0", "rsrq": "-10.0", "snr": "20.0" }
+      ]
+    }
+  }
+}

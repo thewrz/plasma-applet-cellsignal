@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""cellsignal feeder for any ModemManager-managed modem (QMI/MBIM/AT).
+
+Publishes Cell Signal contract-v2 JSON (see docs/CONTRACT.md). Unlike the
+xmm7360 feeder this does no custom modem decode: it reads ModemManager's own
+measurements through ``mmcli --output-json`` and reshapes them into the feed.
+
+Per tick it runs:
+  mmcli -L -J                      find modems (empty -> no-modem)
+  mmcli -m <i> -J                  state, access technology, operator name
+  mmcli -m <i> --signal-get -J     per-tech RSRP/RSRQ/SNR/RSSI (already dBm/dB)
+  mmcli -m <i> --get-cell-info -J  serving EARFCN (-> band/freq) + neighbours
+  mmcli -m <i> --signal-setup=N    enable periodic signal polling if not already
+
+Runs unprivileged as a systemd *user* service: ModemManager grants an active
+local session the ``org.freedesktop.ModemManager1.Device.Control`` polkit action
+(``allow_active=yes`` upstream), so no sudo is needed to talk to the modem, and
+the feed is written to the user runtime dir ($XDG_RUNTIME_DIR/cellsignal.json).
+
+ModemManager reports metrics in dBm/dB, so there is no index mapping. Cell
+identifiers (tac/ci/physical-ci in GetCellInfo) are parsed past, never emitted.
+ModemManager cannot source bandwidth, timing-advance, RRC state or carrier
+aggregation through this interface, so those v2 fields are always null.
+
+usage: cellsignal-feeder-mmcli [--print|--write|--debug]
+"""
+import contextlib
+import json
+import os
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_SCRIPT_DIR, os.path.join(_SCRIPT_DIR, '..', 'shared')]
+from cellsignal_bands import (  # noqa: E402
+    band_for_earfcn,
+    freq_mhz_for_earfcn,
+    quality_pct,
+)
+from mmcli_parse import (  # noqa: E402
+    has_signal_measurement,
+    modem_indexes,
+    parse_cell_info,
+    parse_modem_info,
+    parse_signal,
+)
+
+MMCLI = 'mmcli'
+# Signal polling cadence handed to ModemManager. Keep it at or below the timer
+# interval so each tick reads a freshly polled value. Override with the env var.
+SIGNAL_RATE = os.environ.get('CELLSIGNAL_MMCLI_RATE', '5')
+MMCLI_TIMEOUT = 8               # seconds per mmcli invocation
+
+
+def output_path():
+    """User-writable feed path. Prefers $XDG_RUNTIME_DIR (e.g. /run/user/1000),
+    falling back to the conventional per-uid runtime dir."""
+    base = os.environ.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
+    return os.path.join(base, 'cellsignal.json')
+
+
+def run_json(args, debug):
+    """Run ``mmcli <args> -J`` and return the parsed document, or None on any
+    failure (mmcli missing, non-zero exit, timeout, or unparseable output)."""
+    cmd = [MMCLI, *args, '-J']
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=MMCLI_TIMEOUT)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if debug:
+            print(f'{" ".join(cmd)} -> {type(e).__name__}: {e}', file=sys.stderr)
+        return None
+    if debug:
+        print(f'{" ".join(cmd)} -> rc={r.returncode} out={r.stdout!r} err={r.stderr!r}',
+              file=sys.stderr)
+    if r.returncode != 0:
+        return None
+    try:
+        return json.loads(r.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def enable_signal_polling(idx, debug):
+    """Enable ModemManager's periodic signal polling (Signal.Setup). Idempotent;
+    best-effort — failure just means this tick may lack a fresh sample."""
+    cmd = [MMCLI, '-m', str(idx), f'--signal-setup={SIGNAL_RATE}']
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=MMCLI_TIMEOUT)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        if debug:
+            print(f'{" ".join(cmd)} -> {type(e).__name__}: {e}', file=sys.stderr)
+        return
+    if debug:
+        print(f'{" ".join(cmd)} -> rc={r.returncode} err={r.stderr!r}', file=sys.stderr)
+
+
+def query_modem(idx, tech, debug):
+    """Read the connected modem's signal + serving cell into a decode dict.
+    Enables signal polling and re-reads once when the first sample is empty
+    (polling not yet running), never fabricating a value."""
+    sig = parse_signal(run_json(['-m', str(idx), '--signal-get'], debug), tech)
+    if not has_signal_measurement(sig):
+        enable_signal_polling(idx, debug)
+        sig = parse_signal(run_json(['-m', str(idx), '--signal-get'], debug), tech)
+    cell = parse_cell_info(run_json(['-m', str(idx), '--get-cell-info'], debug))
+    earfcn = cell['earfcn']
+    rsrp = sig['rsrp_dbm']
+    return {
+        'rsrp_dbm': rsrp,
+        'rsrq_db': sig['rsrq_db'],
+        'snr_db': sig['snr_db'],
+        'rssi_dbm': sig['rssi_dbm'],
+        'earfcn': earfcn,
+        'band': band_for_earfcn(earfcn) if earfcn is not None else None,
+        'freq_mhz': freq_mhz_for_earfcn(earfcn) if earfcn is not None else None,
+        'quality_pct': quality_pct(rsrp) if rsrp is not None else None,
+        'neighbors': cell['neighbors'],
+        'tech': tech,
+    }
+
+
+def build_contract(decoded, state, now):
+    d = decoded or {}
+    connected = state == 'connected'
+    return {
+        'version': 2,
+        'ts': now,
+        'state': state,
+        'tech': d.get('tech') if connected else None,
+        'metrics': {
+            'rsrp_dbm': d.get('rsrp_dbm'),
+            'rsrq_db': d.get('rsrq_db'),
+            'snr_db': d.get('snr_db'),
+            'rssi_dbm': d.get('rssi_dbm'),
+        },
+        'cell': {
+            'band': d.get('band'),
+            'earfcn': d.get('earfcn'),
+            'freq_mhz': d.get('freq_mhz'),
+            # Not exposed by ModemManager's signal/cell-info interfaces:
+            'bandwidth_mhz': None,
+            'timing_advance': None,
+            'distance_m': None,
+            'rrc_state': None,
+        },
+        'aggregation': None,
+        'neighbors': d.get('neighbors') or [],
+        'operator': d.get('operator'),
+        'quality_pct': d.get('quality_pct'),
+        'source': 'mmcli',
+    }
+
+
+def build_current_contract(decoded, state):
+    """Build a contract stamped after its measurement queries complete."""
+    return build_contract(decoded, state, int(time.time()))
+
+
+def find_connected_modem(idxs, debug):
+    """Return the first connected modem and whether any info query failed."""
+    query_failed = False
+    for idx in idxs:
+        info_doc = run_json(['-m', str(idx)], debug)
+        if info_doc is None:
+            query_failed = True
+            continue
+        modem_info = parse_modem_info(info_doc)
+        if modem_info['state'] == 'connected':
+            return idx, modem_info, query_failed
+        if modem_info['state'] is None:
+            query_failed = True
+    return None, None, query_failed
+
+
+def read_state(debug=False):
+    """Return ``(contract_doc | None, keep_last)``.
+
+    ``keep_last`` is True when ModemManager is unreachable or modem state cannot
+    be determined reliably: a transient blip must not overwrite the last sample.
+    The timestamp is captured after all measurement queries complete.
+    """
+    list_doc = run_json(['-L'], debug)
+    if list_doc is None:
+        return None, True                       # ModemManager unreachable: keep last
+    idxs = modem_indexes(list_doc)
+    if not idxs:
+        return build_current_contract(None, 'no-modem'), False
+
+    idx, modem_info, query_failed = find_connected_modem(idxs, debug)
+    if idx is None:
+        if query_failed:
+            return None, True
+        return build_current_contract(None, 'disconnected'), False
+
+    decoded = query_modem(idx, modem_info['tech'], debug)
+    decoded['operator'] = modem_info['operator']
+    if not has_signal_measurement(decoded):
+        # Connected but no usable measurement (mid-attach, polling not warmed):
+        # report error rather than fabricate a value.
+        return build_current_contract(None, 'error'), False
+    return build_current_contract(decoded, 'connected'), False
+
+
+def write_atomic(text):
+    """Write the feed via temp file + rename, world-readable (0644)."""
+    out = output_path()
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(out), prefix='cellsignal.')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            f.write(text + '\n')
+            os.fchmod(f.fileno(), 0o644)
+        os.replace(tmp, out)
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else '--print'
+    if mode not in ('--print', '--write', '--debug'):
+        sys.exit(f'usage: cellsignal-feeder-mmcli [--print|--write|--debug]  '
+                 f'(--write -> {output_path()})')
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+
+    doc, keep_last = read_state(debug=(mode == '--debug'))
+    if keep_last:
+        if mode != '--write':
+            print('(ModemManager unreachable — kept last value)')
+        return
+    text = json.dumps(doc)
+    if mode == '--write':
+        write_atomic(text)
+    else:
+        print(text)
+
+
+if __name__ == '__main__':
+    main()

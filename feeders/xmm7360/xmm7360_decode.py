@@ -21,16 +21,22 @@ looked like plausible RF values — while these AT queries return the actual
 live measurements. The privacy rule stands: parse only measurements; never
 return TAC/cell-id/PCI.
 """
+import os
 import re
+import sys
 
-# DL EARFCN ranges -> LTE band. AT&T-operated bands only by default: every extra
-# range is false-match surface. Extend deliberately for other carriers.
-BAND_RANGES = [
-    (600, 1199, 'B2', 1900), (1950, 2399, 'B4', 1700), (2400, 2649, 'B5', 850),
-    (5010, 5179, 'B12', 700), (5280, 5379, 'B14', 700), (5730, 5849, 'B17', 700),
-    (9660, 9769, 'B29', 700), (9770, 9869, 'B30', 2300),
-    (66436, 67335, 'B66', 1700), (68586, 68935, 'B71', 600),
-]
+# The EARFCN band table, band_for_earfcn, freq_mhz_for_earfcn and quality_pct
+# are shared across feeders; import them from the shared module installed
+# alongside this file. Re-exported here so existing callers keep importing them
+# from xmm7360_decode unchanged.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [_SCRIPT_DIR, os.path.join(_SCRIPT_DIR, '..', 'shared')]
+from cellsignal_bands import (  # noqa: E402,F401
+    BAND_RANGES,
+    band_for_earfcn,
+    freq_mhz_for_earfcn,
+    quality_pct,
+)
 
 _XCESQ_RE = re.compile(
     r'\+XCESQ:\s*\d+,\s*\d+,\s*\d+,\s*\d+,\s*\d+,\s*(\d+),\s*(\d+),\s*(-?\d+)')
@@ -45,26 +51,6 @@ BANDWIDTH_MHZ = {0: 1.4, 1: 3, 2: 5, 3: 10, 4: 15, 5: 20}
 # Timing-Advance N/A sentinel (neighbour lines and idle report this).
 _TA_NA = 0x7FFFFFFF
 _METERS_PER_TA = 78.125          # one-way LTE Ts distance step (≈ c * 16 * Ts / 2)
-
-
-def band_for_earfcn(earfcn):
-    for lo, hi, name, _mhz in BAND_RANGES:
-        if lo <= earfcn <= hi:
-            return name
-    return None
-
-
-def freq_mhz_for_earfcn(earfcn):
-    for lo, hi, _name, mhz in BAND_RANGES:
-        if lo <= earfcn <= hi:
-            return mhz
-    return None
-
-
-def quality_pct(rsrp_dbm):
-    """Map RSRP -120..-80 dBm onto 0..100, clamped."""
-    pct = (rsrp_dbm + 120.0) * (100.0 / 40.0)
-    return int(max(0, min(100, round(pct))))
 
 
 def parse_xcesq(text):

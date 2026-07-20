@@ -1,0 +1,6 @@
+{
+  "_note": "ModemManager is running but manages no modem. mmcli -L returns an empty list; the feeder reports state=no-modem.",
+  "list": {
+    "modem-list": []
+  }
+}

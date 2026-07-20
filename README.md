@@ -44,7 +44,7 @@ disables the popup's motion.
 | Feeder | Hardware | Status |
 |---|---|---|
 | [feeders/xmm7360](feeders/xmm7360/) | Intel XMM7360 with the in-tree `iosm` driver | Contract v2 implemented |
-| `feeders/mmcli` | ModemManager modems | Planned |
+| [feeders/mmcli](feeders/mmcli/) | Any ModemManager modem (QMI/MBIM/AT) | Contract v2 implemented |
 
 The default feed command is `cat /run/cellsignal.json`. The complete document
 format and compatibility rules are in [docs/CONTRACT.md](docs/CONTRACT.md).

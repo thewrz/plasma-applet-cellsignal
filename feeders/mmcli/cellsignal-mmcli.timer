@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Cell Signal metrics feed (ModemManager)
+
+[Timer]
+OnBootSec=30
+# Match CELLSIGNAL_MMCLI_RATE (the --signal-setup rate) so each tick reads a
+# freshly polled sample.
+OnUnitActiveSec=5
+AccuracySec=1
+
+[Install]
+WantedBy=timers.target
